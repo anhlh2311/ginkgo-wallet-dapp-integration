@@ -62,7 +62,7 @@ This is where:
 
 ### 4. Wallet Gateway (Canton-exchange backend)
 
-A separate service the wallet talks to. On Ginkgo's dev/devnet/testnet/mainnet setups it's at `http://localhost:3003` / `https://api-devnet.kairo.ag` / etc. Implements two JSON-RPC facades:
+A separate service the wallet talks to. On a local development setup it's at `http://localhost:3003`; on devnet/testnet/mainnet deployments it's whatever URL the wallet's network configuration points to (queryable via `getActiveNetwork().ledgerApi`). Implements two JSON-RPC facades:
 
 - `POST /api/v0/dapp` — unauthenticated. Used for `prepareExecute` (taking a dApp-issued command and turning it into a prepared transaction the user can review).
 - `POST /api/v0/user` — authenticated with the *wallet user's* bearer token. Used for `getTransaction`, `execute`, `deleteTransaction`. **This is the auth boundary** — dApps don't authenticate themselves; they piggyback on the active wallet user's session.

@@ -36,8 +36,10 @@ Methods in the `APPROVAL_REQUIRED_METHODS` set show an approval popup before the
 If the user clicks "Reject" (or closes the popup), Ginkgo returns a JSON-RPC error with code `4001 USER_REJECTED` and the dApp's request promise rejects.
 
 ```ts
+import { signMessage } from '@canton-network/dapp-sdk';
+
 try {
-  await provider.request({ method: 'signMessage', params: { message: 'Hi' } });
+  await signMessage({ message: 'Hi' });
 } catch (e) {
   if (e.code === 4001) {
     // User rejected — show a non-error UI ("the user declined to sign").
@@ -72,15 +74,19 @@ Treat the boolean conjunction `isConnected && isNetworkConnected` as the only "g
 When the dApp regains focus after the user has been away, call `status` (no approval, no popup) to confirm the wallet's still in the same state:
 
 ```ts
+import { status } from '@canton-network/dapp-sdk';
+
 window.addEventListener('focus', async () => {
-  const s = await provider.request({ method: 'status', params: {} });
+  const s = await status();
   if (!s.connection.isConnected) {
     showReconnectUI(s.connection.reason);
-  } else if (s.network.networkId !== expectedNetworkId) {
-    refreshDataForNetwork(s.network.networkId);
+  } else if (s.network?.networkId !== expectedNetworkId) {
+    refreshDataForNetwork(s.network?.networkId);
   }
 });
 ```
+
+Note: `status.network` and `status.session` are optional per the CIP-0103 spec — guard with `?.` when reading nested fields.
 
 This pattern is cheap (no backend round-trip) and avoids the wallet feeling stale.
 

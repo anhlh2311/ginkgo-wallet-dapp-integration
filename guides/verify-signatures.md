@@ -17,12 +17,14 @@ Verification is purely local — no network round-trip, no wallet interaction. A
 `signMessage` returns `{ signature }` only — no `publicKey` in the response (per CIP-0103). Fetch it once on connect and reuse it across all subsequent signatures.
 
 ```ts
+import { connect, listAccounts } from '@canton-network/dapp-sdk';
+
 let cachedPublicKey: string | null = null;
 
 async function connectAndCache() {
-  await provider.request({ method: 'connect', params: {} });
-  const account = await provider.request({ method: 'getPrimaryAccount', params: {} });
-  cachedPublicKey = account.publicKey;
+  await connect();
+  const [primary] = await listAccounts();
+  cachedPublicKey = primary?.publicKey ?? null;
 }
 
 // On disconnect or accountsChanged event, clear the cache:
@@ -40,6 +42,7 @@ npm install tweetnacl tweetnacl-util
 ```
 
 ```ts
+import { signMessage } from '@canton-network/dapp-sdk';
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
 
@@ -56,10 +59,7 @@ function verifySignMessage(
 }
 
 // Usage:
-const { signature } = await provider.request({
-  method: 'signMessage',
-  params: { message: 'Hello' },
-});
+const { signature } = await signMessage({ message: 'Hello' });
 const ok = verifySignMessage('Hello', signature, cachedPublicKey!);
 ```
 
@@ -149,24 +149,21 @@ Note the difference vs `signMessage`: pre-image is `decodeBase64(transactionHash
 ## End-to-end test
 
 ```ts
-// Full self-contained smoke test. Paste into a dApp page's DevTools console
-// after connecting to Ginkgo.
+// Full self-contained smoke test. After connecting to Ginkgo:
 
+import { listAccounts, signMessage } from '@canton-network/dapp-sdk';
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
 
 const message = 'verifying-' + Math.random();
 
-const account = await provider.request({ method: 'getPrimaryAccount', params: {} });
-const { signature } = await provider.request({
-  method: 'signMessage',
-  params: { message },
-});
+const [primary] = await listAccounts();
+const { signature } = await signMessage({ message });
 
 const verified = nacl.sign.detached.verify(
   new TextEncoder().encode(message),
   naclUtil.decodeBase64(signature),
-  naclUtil.decodeBase64(account.publicKey),
+  naclUtil.decodeBase64(primary.publicKey),
 );
 
 console.assert(verified, 'signature should verify');

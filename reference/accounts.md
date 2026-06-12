@@ -13,7 +13,7 @@ None.
 ### Returns
 
 ```ts
-DappAccount[]
+Wallet[]
 ```
 
 Empty array when the wallet is locked or has no party onboarded.
@@ -25,15 +25,18 @@ None.
 ### Example
 
 ```ts
-const accounts = await provider.request({ method: 'listAccounts', params: {} });
+import { listAccounts } from '@canton-network/dapp-sdk';
+
+const accounts = await listAccounts();
 if (accounts.length === 0) {
   alert('Please unlock the Ginkgo wallet.');
 }
+const primary = accounts.find((a) => a.primary) ?? accounts[0];
 ```
 
 ## `getPrimaryAccount`
 
-Returns the single primary account. Throws if no account is available.
+Returns the single primary account. Throws if no account is available. Not exposed as a top-level SDK helper — reach for the underlying provider.
 
 ### Params
 
@@ -42,15 +45,17 @@ None.
 ### Returns
 
 ```ts
-DappAccount = {
+Wallet = {
   primary: boolean;                                  // always true here
   partyId: string;                                   // 'hint::fingerprint'
   status: 'initialized' | 'allocated' | 'removed';   // always 'allocated' in current Ginkgo
   hint: string;                                      // pre-'::' portion
   publicKey: string;                                 // base64-encoded Ed25519 public key
   namespace: string;                                 // post-'::' portion (the fingerprint)
-  networkId: string;                                 // matches getActiveNetwork().networkId
+  networkId: string;                                 // CAIP-2 form, e.g. 'canton:devnet'
   signingProviderId: string;                         // 'ginkgo'
+  externalTxId?: string;
+  topologyTransactions?: string;
   disabled?: boolean;
   reason?: string;
 }
@@ -63,19 +68,23 @@ DappAccount = {
 ### Example
 
 ```ts
-const account = await provider.request({ method: 'getPrimaryAccount', params: {} });
-console.log(`Signed in as ${account.partyId}`);
+import { getConnectedProvider } from '@canton-network/dapp-sdk';
+
+const provider = getConnectedProvider();
+if (!provider) throw new Error('Not connected');
+const account = await provider.request({ method: 'getPrimaryAccount' });
+console.log(`Signed in as ${account.partyId} on ${account.networkId}`);
 console.log(`Public key: ${account.publicKey}`);
 ```
 
 ### When to call
 
-Call `getPrimaryAccount` **once on connect** to capture the `publicKey` for local signature verification. The `publicKey` does not change between calls by the same wallet, so cache it for the session. See [Verify a signature](../guides/verify-signatures.md) for the canonical pattern.
+Call `getPrimaryAccount` (or read from `listAccounts()[0]`) **once on connect** to capture the `publicKey` for local signature verification. The `publicKey` does not change between calls by the same wallet, so cache it for the session. See [Verify a signature](../guides/verify-signatures.md) for the canonical pattern.
 
 ```ts
 // At app startup or after connect:
-const account = await provider.request({ method: 'getPrimaryAccount', params: {} });
-const cachedPublicKey = account.publicKey;
+const accounts = await listAccounts();
+const cachedPublicKey = accounts[0]?.publicKey;
 
 // Subsequent signMessage calls return only { signature }; reuse cachedPublicKey to verify.
 ```
@@ -87,3 +96,4 @@ const cachedPublicKey = account.publicKey;
 - `signingProviderId` is `'ginkgo'`. The SDK uses this to route signing-relay traffic; for direct dApp usage, you can ignore it.
 - `namespace === partyId.split('::')[1]` (always; pre-split for convenience).
 - `hint === partyId.split('::')[0]` (always).
+- `networkId` is in CAIP-2 form (`canton:<network>`), matching the value returned by `getActiveNetwork().networkId`.

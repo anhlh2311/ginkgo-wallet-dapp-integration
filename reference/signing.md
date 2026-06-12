@@ -29,24 +29,22 @@ CIP-0103 mandates this exact shape — `{ signature }` and only `{ signature }`.
 ### Example
 
 ```ts
+import { listAccounts, signMessage } from '@canton-network/dapp-sdk';
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
 
 // Cache the publicKey once.
-const account = await provider.request({ method: 'getPrimaryAccount', params: {} });
+const [primary] = await listAccounts();
 
 // Sign.
 const message = 'Sign me to prove key ownership.';
-const { signature } = await provider.request({
-  method: 'signMessage',
-  params: { message },
-});
+const { signature } = await signMessage({ message });
 
 // Verify with any standard Ed25519 implementation.
 const verified = nacl.sign.detached.verify(
   new TextEncoder().encode(message),
   naclUtil.decodeBase64(signature),
-  naclUtil.decodeBase64(account.publicKey),
+  naclUtil.decodeBase64(primary.publicKey),
 );
 ```
 
@@ -100,6 +98,7 @@ This shape is a Ginkgo convenience extension (the spec has no equivalent method)
 ### Example
 
 ```ts
+import { getConnectedProvider } from '@canton-network/dapp-sdk';
 import nacl from 'tweetnacl';
 import naclUtil from 'tweetnacl-util';
 
@@ -107,6 +106,10 @@ const hashBytes = new Uint8Array(32);
 crypto.getRandomValues(hashBytes);
 const transactionHash = naclUtil.encodeBase64(hashBytes);
 
+// signTransaction isn't a CIP-0103 method — it's a Ginkgo extension and not
+// exposed as a top-level SDK helper. Reach for the underlying provider.
+const provider = getConnectedProvider();
+if (!provider) throw new Error('Not connected');
 const { signature, publicKey } = await provider.request({
   method: 'signTransaction',
   params: { transactionHash },

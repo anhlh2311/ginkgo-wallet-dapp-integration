@@ -31,20 +31,20 @@ A dApp **cannot** use Ginkgo to:
 
 ## The 12-method dApp surface at a glance
 
-| Method | Touches backend? | User approval popup? |
-|---|---|---|
-| `connect` | No | **Yes** |
-| `disconnect` | No | No |
-| `isConnected` | No | No |
-| `status` | No | No |
-| `getActiveNetwork` | No | No |
-| `listAccounts` | No | No |
-| `getPrimaryAccount` | No | No |
-| `signMessage` | No (local Ed25519) | **Yes** |
-| `signTransaction` (Ginkgo extension) | No (local Ed25519) | **Yes** |
-| `prepareExecute` | **Yes** (Wallet Gateway) | **Yes** (after gateway response) |
-| `prepareExecuteAndWait` | **Yes** (Wallet Gateway) | **Yes** (after gateway response) |
-| `ledgerApi` | **Yes** (proxies to gateway) | No |
+| Method | Touches backend? | User approval popup? | Returns |
+|---|---|---|---|
+| `connect` | No | **Yes** | `ConnectResult` |
+| `disconnect` | No | No | `null` |
+| `isConnected` | No | No | `ConnectResult` |
+| `status` | No | No | `StatusEvent` |
+| `getActiveNetwork` | No | No | `Network` |
+| `listAccounts` | No | No | `Wallet[]` |
+| `getPrimaryAccount` | No | No | `Wallet` |
+| `signMessage` | No (local Ed25519) | **Yes** | `{ signature }` |
+| `signTransaction` (Ginkgo extension) | No (local Ed25519) | **Yes** | `{ signature, publicKey, fingerprint }` |
+| `prepareExecute` | **Yes** (Wallet Gateway) | **Yes** (after gateway response) | `null` |
+| `prepareExecuteAndWait` | **Yes** (Wallet Gateway) | **Yes** (after gateway response) | `{ tx: TxChangedExecutedEvent }` |
+| `ledgerApi` | **Yes** (proxies to gateway) | No | gateway response |
 
 Full reference: [reference/overview.md](../reference/overview.md).
 
@@ -56,7 +56,7 @@ If you've integrated MetaMask or another EIP-1193 wallet, the mental model carri
 - `personal_sign` → `signMessage`
 - `eth_signTypedData` → no direct analog; closest is `signTransaction` (which signs a raw 32-byte hash, not typed data)
 - `eth_sendTransaction` → `prepareExecute` (the wallet orchestrates prepare → sign → submit in one call)
-- `eth_chainId` → `getActiveNetwork`
+- `eth_chainId` → `getActiveNetwork().networkId` (CAIP-2 form: `canton:<network>`)
 - `wallet_switchEthereumChain` → no equivalent; users switch networks in the wallet UI
 - `accountsChanged` / `chainChanged` events → see [extensions](../extensions/ginkgo-vs-cip-0103.md)
 

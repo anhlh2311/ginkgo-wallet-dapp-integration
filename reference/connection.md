@@ -14,12 +14,14 @@ None.
 
 ```ts
 ConnectResult = {
-  isConnected: boolean;       // true iff wallet is unlocked AND has a partyId
-  reason: string;             // 'OK' | 'Wallet is locked' | 'No party onboarded' | ...
-  isNetworkConnected: boolean;// true iff the active network's backend responded
-  networkReason: string;
+  isConnected: boolean;        // true iff wallet is unlocked AND has a partyId
+  reason?: string;             // 'OK' | 'Wallet is locked' | 'No party onboarded' | ...
+  isNetworkConnected: boolean; // true iff the active network's backend responded
+  networkReason?: string;
 }
 ```
+
+Spec required: `isConnected`, `isNetworkConnected`. Ginkgo always populates `reason` and `networkReason` for additional context, but spec-validating consumers should treat them as optional.
 
 ### Errors
 
@@ -28,9 +30,11 @@ ConnectResult = {
 ### Example
 
 ```ts
-const result = await provider.request({ method: 'connect', params: {} });
+import { connect } from '@canton-network/dapp-sdk';
+
+const result = await connect();
 if (!result.isConnected) {
-  alert(`Wallet not ready: ${result.reason}`);
+  alert(`Wallet not ready: ${result.reason ?? 'unknown'}`);
 }
 ```
 
@@ -49,7 +53,9 @@ None.
 ### Example
 
 ```ts
-await provider.request({ method: 'disconnect', params: {} });
+import { disconnect } from '@canton-network/dapp-sdk';
+
+await disconnect();
 ```
 
 ## `isConnected`
@@ -67,7 +73,9 @@ None.
 ### Example
 
 ```ts
-const { isConnected } = await provider.request({ method: 'isConnected', params: {} });
+import { isConnected } from '@canton-network/dapp-sdk';
+
+const { isConnected: ok } = await isConnected();
 ```
 
 ## `status`
@@ -81,18 +89,27 @@ None.
 ### Returns
 
 ```ts
-StatusResult = {
-  provider: { id: string; version: string; providerType: string };
-  connection: { isConnected: boolean; reason: string };
-  network: Network;            // { networkId, ledgerApi, name? }
-  session: {
-    isAuthenticated: boolean;  // wallet is unlocked
-    partyId?: string;
+StatusEvent = {
+  provider: {
+    id: string;          // 'ginkgo'
+    version: string;     // matches manifest version
+    providerType: 'browser' | 'desktop' | 'mobile' | 'remote';  // 'browser' for Ginkgo
   };
+  connection: ConnectResult;  // same shape as connect()
+  network?: Network;          // optional per spec; Ginkgo emits when configured
+  session?: Session;          // optional per spec; Ginkgo emits when signed in
+}
+
+Session = {
+  accessToken: string;  // JWT bearer token from the wallet's OAuth session
+  userId: string;       // Stable user identifier from the OAuth session
 }
 ```
 
-`provider.id` is always `'ginkgo'`. `provider.version` matches the extension manifest version. `provider.providerType` is `'browser'`.
+Notes:
+- `provider.id` is `'ginkgo'`. `provider.version` matches the extension manifest. `provider.providerType` is `'browser'`.
+- `status.session` follows the spec's `Session` shape (`accessToken` + `userId`) and is omitted entirely if the user isn't signed in. **It does not echo `partyId`** — use `listAccounts()` or `getPrimaryAccount` for party-level identity.
+- `status.network` follows the spec's `Network` shape (`networkId` + optional `ledgerApi`/`accessToken`) and is omitted entirely if no network is configured.
 
 ### Errors
 
@@ -101,8 +118,13 @@ None.
 ### Example
 
 ```ts
-const s = await provider.request({ method: 'status', params: {} });
-console.log(`Connected to ${s.network.name ?? s.network.networkId} as ${s.session.partyId ?? '(locked)'}`);
+import { status } from '@canton-network/dapp-sdk';
+
+const s = await status();
+console.log(`Connected to ${s.network?.networkId ?? '(no network)'}`);
+if (s.session) {
+  console.log(`Authenticated as user ${s.session.userId}`);
+}
 ```
 
 This is the recommended method to call on window focus / page resume to detect changes (network switch, lock state) without a popup.
@@ -119,11 +141,13 @@ None.
 
 ```ts
 Network = {
-  networkId: string;   // 'localnet' | 'devnet' | 'testnet' | 'mainnet'
-  ledgerApi: string;   // Backend base URL
-  name?: string;       // Display label, e.g. 'Devnet'. Ginkgo extension; not in CIP-0103 spec.
+  networkId: string;   // CAIP-2-compliant chain ID, e.g. 'canton:localnet', 'canton:devnet'
+  ledgerApi?: string;  // Backend base URL
+  accessToken?: string;// Optional bearer token; Ginkgo never emits this field
 }
 ```
+
+`additionalProperties: false`. The shape contains exactly these three fields; strict OpenRPC validators reject any extras.
 
 ### Errors
 
@@ -132,12 +156,18 @@ None.
 ### Example
 
 ```ts
-const { networkId, ledgerApi } = await provider.request({ method: 'getActiveNetwork', params: {} });
+import { getConnectedProvider } from '@canton-network/dapp-sdk';
+
+const provider = getConnectedProvider();
+if (!provider) throw new Error('Not connected');
+const { networkId, ledgerApi } = await provider.request({ method: 'getActiveNetwork' });
 console.log(`On ${networkId} via ${ledgerApi}`);
 ```
 
 ### Notes
 
+- `networkId` is in [CAIP-2](https://chainagnostic.org/CAIPs/caip-2) form (`canton:<network>`). Ginkgo emits values like `'canton:localnet'`, `'canton:devnet'`, `'canton:testnet'`, `'canton:mainnet'`.
 - The user can change the active network via the Ginkgo popup at any time. dApps that hold per-network state should re-fetch this on focus, on `statusChanged` events (see [extensions](../extensions/ginkgo-vs-cip-0103.md)), or before each significant operation.
 - There is no `setNetwork` method. Network selection is wallet-driven only.
-- For Ethereum-style chain ID compatibility, treat `networkId` as the analog of `eth_chainId`'s return.
+- For an EVM-style chain ID analog, treat `networkId` as the equivalent of `eth_chainId`'s return — both serve to disambiguate which chain a wallet is signing against.
+- `getActiveNetwork` isn't exposed as a top-level SDK helper (yet); reach it through `getConnectedProvider().request({ method: 'getActiveNetwork' })`. Most dApps can read the same information from `status().network`.

@@ -14,26 +14,28 @@ A precise list of where Ginkgo's dApp API deviates from vanilla CIP-0103. Every 
 
 CIP-0103 has no `signTransaction` method. Ginkgo adds one to sign a 32-byte transaction hash directly. See [reference/signing.md](../reference/signing.md#signtransaction).
 
-**Why kept:** existing Canton dApps (notably `canton-test-dapp`) rely on it. For new code, prefer `prepareExecute` — it follows the spec.
+**Why kept:** existing Canton dApps rely on it. For new code, prefer `prepareExecute` / `prepareExecuteAndWait` — they follow the spec.
 
 **Return shape:** `{ signature, publicKey, fingerprint }` (extension shape; spec has no equivalent).
 
-### `name` field on `Network`
+**Where to call from:** not exposed as a top-level `@canton-network/dapp-sdk` helper. Reach for the raw provider:
 
-CIP-0103's `Network` shape defines `networkId` (required) and `ledgerApi` (optional). Ginkgo's response also includes `name`, a human-readable label like `'Localnet'` / `'Devnet'`.
-
-**Why kept:** UI display convenience. CIP-0103 permits `additionalProperties`, so schema-validating SDKs accept the extra field. Spec-strict consumers can ignore it.
+```ts
+import { getConnectedProvider } from '@canton-network/dapp-sdk';
+const provider = getConnectedProvider();
+const { signature } = await provider!.request({ method: 'signTransaction', params: { transactionHash } });
+```
 
 ### `SPLICE_WALLET_EVENT` envelope variant
 
-The standard `WalletEvent` enum has 7 members covering request/response and the extension handshake. Ginkgo adds an 8th: `SPLICE_WALLET_EVENT`, used to push `statusChanged` / `accountsChanged` notifications from the background to the dApp.
+The standard CIP-0103 `WalletEvent` enum has 7 members (the request/response pair plus the extension handshake plus IdP auth events). Ginkgo adds an 8th: `SPLICE_WALLET_EVENT`, used to push `statusChanged` / `accountsChanged` notifications from the background to the dApp.
 
 ```ts
 // Ginkgo-pushed event envelope:
 {
   type: 'SPLICE_WALLET_EVENT',
   event: 'statusChanged' | 'accountsChanged',
-  data: unknown,  // for statusChanged: StatusResult; for accountsChanged: DappAccount[]
+  data: unknown,  // for statusChanged: StatusEvent; for accountsChanged: Wallet[]
 }
 ```
 
@@ -47,10 +49,10 @@ window.addEventListener('message', (e) => {
   if (m?.type !== 'SPLICE_WALLET_EVENT') return;
   switch (m.event) {
     case 'statusChanged':
-      refreshUiFor(m.data);  // m.data has the StatusResult shape
+      refreshUiFor(m.data);  // m.data has the StatusEvent shape
       break;
     case 'accountsChanged':
-      onAccountsChanged(m.data);  // m.data is a DappAccount[]
+      onAccountsChanged(m.data);  // m.data is a Wallet[]
       break;
   }
 });
@@ -84,11 +86,11 @@ CIP-0103's spec defines `messageSignature` events (`pending` → `signed`/`faile
 
 **Impact:** dApps that subscribe to `messageSignature` events won't receive any from Ginkgo. Use the promise return from `signMessage` instead.
 
-### `connect` return when already connected
+### `getPrimaryAccount` not in the top-level SDK surface
 
-When the user has connected once and calls `connect` again in the same session, Ginkgo returns the current `ConnectResult` rather than re-prompting for approval. CIP-0103 doesn't explicitly mandate either behavior.
+`@canton-network/dapp-sdk` exports top-level helpers for most CIP-0103 methods (`connect`, `disconnect`, `isConnected`, `status`, `listAccounts`, `prepareExecute`, `prepareExecuteAndWait`, `signMessage`, `ledgerApi`) but not `getPrimaryAccount`. The method still works — call it through `getConnectedProvider().request({ method: 'getPrimaryAccount' })`.
 
-**Impact:** dApps can call `connect` idempotently to check connection state, but should still use `isConnected` or `status` for explicit health checks since they're guaranteed not to pop up the approval window.
+For most dApps, `listAccounts()[0]` (or `accounts.find(a => a.primary)`) gives the same answer without the extra hop.
 
 ## Deferred upstream
 
@@ -96,23 +98,23 @@ When the user has connected once and calls `connect` again in the same session, 
 
 CIP-0103 defines `txChanged` lifecycle events (`pending` → `signed` → `executed`/`failed`) that fire during a `prepareExecute` call so the dApp can show progress UI without polling.
 
-**Status in Ginkgo:** not emitted. Our `prepareExecute` is "fire and resolve" — the promise resolves after the gateway returns the execute result.
+**Status in Ginkgo:** not emitted. Our `prepareExecute` is "fire and resolve" — the promise resolves with `null` (per spec) after the gateway returns the execute result.
 
 **Status upstream:** the `@canton-network/dapp-sdk`'s `DappSyncProvider` (used for extension flows) uses `WindowTransport`, which is request/response only. It has no listener for these events. The reference wallet-gateway extension stubs `txChanged` with `throw new Error('Only for events.')`. So even if Ginkgo emitted spec-conformant events, no SDK consumer would receive them.
 
 **When this will be fixed:** awaiting upstream wiring of an event delivery channel for the extension flow. Track at [hyperledger-labs/splice-wallet-kernel](https://github.com/hyperledger-labs/splice-wallet-kernel).
 
 In the meantime, dApps can use:
-- The promise return from `prepareExecuteAndWait` (which carries the spec-shape executed event).
+- The promise return from `prepareExecuteAndWait` (which carries the spec-shape `{ tx: TxChangedExecutedEvent }` and resolves only on commit).
 - Ginkgo's `SPLICE_WALLET_EVENT` channel for `statusChanged` / `accountsChanged` (Ginkgo extension, see above).
 
 ### Multi-wallet routing (`target` field)
 
 CIP-0103 defines an optional `target: string` on the SpliceMessage envelope so dApps can route requests to a specific wallet extension by ID when multiple are installed.
 
-**Status in Ginkgo:** supported on incoming (request/ext-ready/ext-open) and echoed on outgoing (ext-ack). dApps using `@canton-network/dapp-sdk`'s discovery client will see Ginkgo announced with `target: chrome.runtime.id` and can route subsequent calls correctly.
+**Status in Ginkgo:** supported on incoming (`SPLICE_WALLET_REQUEST` / `SPLICE_WALLET_EXT_READY` / `SPLICE_WALLET_EXT_OPEN`) and echoed on outgoing (`SPLICE_WALLET_EXT_ACK`). dApps using `@canton-network/dapp-sdk`'s discovery (via `init()`) will see Ginkgo announced with `target: chrome.runtime.id` and can route subsequent calls correctly.
 
-**Note:** if a dApp omits `target`, Ginkgo accepts the message and processes it — same behavior as upstream.
+**Note:** if a dApp omits `target`, Ginkgo accepts the message and processes it — same behavior as the upstream reference extension.
 
 ## Quick reference: divergence summary table
 
@@ -120,12 +122,16 @@ CIP-0103 defines an optional `target: string` on the SpliceMessage envelope so d
 |---|---|---|
 | Method set | 11 methods | 12 methods (+`signTransaction`) |
 | `signMessage` returns | `{ signature }` | `{ signature }` (spec-compliant) |
-| `Network` shape | `{ networkId, ledgerApi?, accessToken? }` | `{ networkId, ledgerApi, name }` (+`name`) |
+| `Network` shape | `{ networkId, ledgerApi?, accessToken? }` | `{ networkId, ledgerApi }` (spec-compliant; CAIP-2 form) |
+| `Wallet.networkId` | CAIP-2 chain ID | CAIP-2 chain ID (`canton:<network>`) — spec-compliant |
+| `prepareExecute` returns | `Null` | `null` (spec-compliant) |
+| `prepareExecuteAndWait` returns | `{ tx: TxChangedExecutedEvent }` | `{ tx: TxChangedExecutedEvent }` (spec-compliant) |
 | `WalletEvent` envelope members | 7 (REQUEST, RESPONSE, EXT_*, IDP_AUTH_SUCCESS, LOGOUT) | 8 (+`SPLICE_WALLET_EVENT`) |
 | `target` field on envelope | optional | supported, echoed |
 | Discovery | EIP-6963 (`canton:requestProvider` / `canton:announceProvider`) | EIP-6963 (spec-compliant) |
+| Error codes | full set | full set |
+| `StatusEvent.session` | optional `{ accessToken, userId }` | optional `{ accessToken, userId }` (spec-compliant) |
 | `txChanged` lifecycle events | defined | not emitted (deferred upstream) |
 | `accountsChanged` / `statusChanged` push | spec-defined channel TBD | emitted via `SPLICE_WALLET_EVENT` (Ginkgo channel) |
 | Async `connect` + IdP login | defined | not implemented (Ginkgo holds keys locally) |
 | Multi-account | defined | single-account today |
-| Error codes | full set | full set (PR 6) |

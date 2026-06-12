@@ -7,14 +7,14 @@ All 12 dApp-callable JSON-RPC methods. Sortable at-a-glance reference; full deta
 | [`connect`](connection.md#connect) | `{}` | `ConnectResult` | ✅ | — | CIP-0103 |
 | [`disconnect`](connection.md#disconnect) | `{}` | `null` | — | — | CIP-0103 |
 | [`isConnected`](connection.md#isconnected) | `{}` | `ConnectResult` | — | — | CIP-0103 |
-| [`status`](connection.md#status) | `{}` | `StatusResult` | — | — | CIP-0103 |
+| [`status`](connection.md#status) | `{}` | `StatusEvent` | — | — | CIP-0103 |
 | [`getActiveNetwork`](connection.md#getactivenetwork) | `{}` | `Network` | — | — | CIP-0103 |
-| [`listAccounts`](accounts.md#listaccounts) | `{}` | `DappAccount[]` | — | — | CIP-0103 |
-| [`getPrimaryAccount`](accounts.md#getprimaryaccount) | `{}` | `DappAccount` | — | — | CIP-0103 |
+| [`listAccounts`](accounts.md#listaccounts) | `{}` | `Wallet[]` | — | — | CIP-0103 |
+| [`getPrimaryAccount`](accounts.md#getprimaryaccount) | `{}` | `Wallet` | — | — | CIP-0103 |
 | [`signMessage`](signing.md#signmessage) | `{ message }` | `{ signature }` | ✅ | — | CIP-0103 |
 | [`signTransaction`](signing.md#signtransaction) | `{ transactionHash }` | `{ signature, publicKey, fingerprint }` | ✅ | — | Ginkgo extension |
-| [`prepareExecute`](prepare-execute.md#prepareexecute) | `PrepareExecuteParams` | gateway execute result | ✅ | ✅ | CIP-0103 |
-| [`prepareExecuteAndWait`](prepare-execute.md#prepareexecuteandwait) | `PrepareExecuteParams` | `TxChangedExecutedEvent` | ✅ | ✅ | CIP-0103 |
+| [`prepareExecute`](prepare-execute.md#prepareexecute) | `PrepareExecuteParams` | `null` | ✅ | ✅ | CIP-0103 |
+| [`prepareExecuteAndWait`](prepare-execute.md#prepareexecuteandwait) | `PrepareExecuteParams` | `{ tx: TxChangedExecutedEvent }` | ✅ | ✅ | CIP-0103 |
 | [`ledgerApi`](prepare-execute.md#ledgerapi) | `LedgerApiParams` | gateway response | — | ✅ | CIP-0103 |
 
 ## Common shapes
@@ -33,24 +33,30 @@ type JsonRpcResponse =
 
 ```ts
 interface Network {
-  networkId: string;   // CAIP-2-like identifier, e.g. 'localnet', 'devnet', 'testnet', 'mainnet'
-  ledgerApi: string;   // Base URL of the network's Wallet Gateway / API, e.g. 'https://api-devnet.kairo.ag/'
-  name?: string;       // Display name (Ginkgo extension; not in CIP-0103 spec)
+  networkId: string;   // CAIP-2-compliant chain ID, e.g. 'canton:localnet', 'canton:devnet'
+  ledgerApi?: string;  // Base URL of the network's Wallet Gateway / Ledger API
+  accessToken?: string;// Optional bearer token; Ginkgo never emits this field
 }
 ```
 
-### `DappAccount`
+`additionalProperties: false` — strict OpenRPC validators reject any extra fields.
+
+### `Wallet`
+
+The `DappAccount` shape returned by `listAccounts` and `getPrimaryAccount`. Mirrors the CIP-0103 `Wallet` schema.
 
 ```ts
-interface DappAccount {
-  primary: boolean;                                    // always true in current Ginkgo (single-account)
+interface Wallet {
+  primary: boolean;                                    // true for the active wallet
   partyId: string;                                     // 'hint::fingerprint'
-  status: 'initialized' | 'allocated' | 'removed';    // currently always 'allocated'
-  hint: string;                                        // pre-fingerprint portion of partyId
+  status: 'initialized' | 'allocated' | 'removed';    // currently always 'allocated' in Ginkgo
+  hint: string;                                        // pre-'::' portion of partyId
   publicKey: string;                                   // base64-encoded Ed25519 public key
-  namespace: string;                                   // fingerprint portion of partyId
-  networkId: string;                                   // matches getActiveNetwork().networkId
+  namespace: string;                                   // post-'::' portion (the fingerprint)
+  networkId: string;                                   // CAIP-2 form, matches getActiveNetwork().networkId
   signingProviderId: string;                           // always 'ginkgo'
+  externalTxId?: string;
+  topologyTransactions?: string;
   disabled?: boolean;
   reason?: string;
 }
@@ -60,31 +66,37 @@ interface DappAccount {
 
 ```ts
 interface ConnectResult {
-  isConnected: boolean;       // wallet unlocked AND has an onboarded party
-  reason: string;             // 'OK' or a human-readable reason
-  isNetworkConnected: boolean;// wallet can reach the active network's backend
-  networkReason: string;
+  isConnected: boolean;        // wallet unlocked AND has an onboarded party
+  reason?: string;             // 'OK' or a human-readable reason (Ginkgo always populates)
+  isNetworkConnected: boolean; // wallet can reach the active network's backend
+  networkReason?: string;      // 'OK' or a human-readable reason (Ginkgo always populates)
+  userUrl?: string;            // Optional async-connect URL; Ginkgo never emits (sync-only)
 }
 ```
 
-### `StatusResult`
+### `Session`
 
 ```ts
-interface StatusResult {
+interface Session {
+  accessToken: string;  // JWT bearer token from the wallet's auth session
+  userId: string;       // Stable user identifier from the OAuth session
+}
+```
+
+`additionalProperties: false`. Ginkgo emits this only when both fields are available; otherwise the optional `status.session` field is omitted entirely.
+
+### `StatusEvent`
+
+```ts
+interface StatusEvent {
   provider: {
     id: string;          // 'ginkgo'
     version: string;     // matches manifest version, e.g. '0.2.0'
-    providerType: string;// 'browser'
+    providerType: 'browser' | 'desktop' | 'mobile' | 'remote';  // always 'browser' for Ginkgo
   };
-  connection: {
-    isConnected: boolean;
-    reason: string;
-  };
-  network: Network;       // same shape as getActiveNetwork
-  session: {
-    isAuthenticated: boolean;     // wallet is unlocked
-    partyId: string | undefined;  // active partyId or undefined when locked
-  };
+  connection: ConnectResult;  // same shape as connect()
+  network?: Network;          // optional per spec; Ginkgo emits when a network is configured
+  session?: Session;          // optional per spec; Ginkgo emits when signed in
 }
 ```
 

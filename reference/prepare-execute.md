@@ -4,7 +4,7 @@ The transaction submission methods. These are the primary way dApps submit anyth
 
 ## `prepareExecute`
 
-Full transaction lifecycle: dApp submits a command, gateway prepares a Canton transaction, user approves, wallet signs locally, gateway executes on the ledger.
+Full transaction lifecycle: dApp submits a command, gateway prepares a Canton transaction, user approves, wallet signs locally, gateway executes on the ledger. Returns `null` per CIP-0103 — use [`prepareExecuteAndWait`](#prepareexecuteandwait) if you want the execute result.
 
 ### Params
 
@@ -18,7 +18,7 @@ PrepareExecuteParams = {
 }
 
 type GatewayCommand = {
-  templateId: string;                   // e.g. 'Splice.Api.Token.TransferInstructionV1:TransferFactory'
+  templateId: string;                   // e.g. '#Splice.Api.Token.TransferInstructionV1:TransferFactory'
   choiceName: string;                   // e.g. 'TransferFactory_Transfer'
   contractId?: string;                  // for exercise commands
   arguments: Record<string, unknown>;   // choice arguments
@@ -29,57 +29,38 @@ The exact `commands` shape depends on the Canton template package the gateway is
 
 ### Returns
 
-The gateway's `execute` JSON-RPC result, typically:
+`null`.
 
-```ts
-{
-  updateId: string;          // Canton ledger transaction ID
-  completionOffset: number;  // ledger offset where the update was committed
-  // ...possibly other gateway-defined fields
-}
-```
+Per the canonical CIP-0103 OpenRPC schema, `prepareExecute`'s result is `Null`. dApps that need transaction completion details should call `prepareExecuteAndWait` instead.
 
-The exact shape is whatever the gateway returns and is not strictly typed by CIP-0103. For typed access to `updateId` + `completionOffset`, use [`prepareExecuteAndWait`](#prepareexecuteandwait) instead.
+(Conceptually the spec also defines `txChanged` lifecycle events as a side-channel for `pending → signed → executed/failed` updates. Ginkgo doesn't emit these yet — see [extensions](../extensions/ginkgo-vs-cip-0103.md) for status.)
 
 ### Errors
 
 - `4001 USER_REJECTED` — user declined the approval popup. Ginkgo also calls `deleteTransaction` on the gateway to clean up the pending command.
 - `4100 UNAUTHORIZED` — wallet is locked or no party is onboarded.
-- `-32002 RESOURCE_UNAVAILABLE` — wallet facade is not configured for the active network. Likely the network's `ledgerApi` URL is unreachable.
+- `-32002 RESOURCE_UNAVAILABLE` — wallet facade is not configured for the active network.
 - `-32603 INTERNAL_ERROR` — gateway returned an unexpected response, or no `commandId` could be extracted from the prepare reply.
 - Forwarded gateway errors with their original codes (`-32000` to `-32005`) and messages.
 
 ### Example
 
-End-to-end token transfer via the Token Standard:
-
 ```ts
-const command = {
-  templateId: '#Splice.Api.Token.TransferInstructionV1:TransferFactory',
-  choiceName: 'TransferFactory_Transfer',
-  arguments: {
-    sender: account.partyId,
-    receiver: 'kairo-devnet::1220275036…30d',
-    amount: '10.0',
-    instrumentId: { admin: 'IDSO::1220be58…1a', id: 'Amulet' },
-    // ... other Token Standard fields
-  },
-};
+import { prepareExecute } from '@canton-network/dapp-sdk';
 
-const result = await provider.request({
-  method: 'prepareExecute',
-  params: { commands: [command] },
+await prepareExecute({
+  commands: [{
+    templateId: '#Splice.Api.Token.TransferInstructionV1:TransferFactory',
+    choiceName: 'TransferFactory_Transfer',
+    arguments: { /* ... */ },
+  }],
 });
-console.log('Executed:', result);
+console.log('Transaction submitted'); // we don't get back the result; call prepareExecuteAndWait for that
 ```
-
-The user sees an approval popup showing the prepared command details, then the transaction is signed locally and submitted. The promise resolves with the gateway's execute result.
-
-See [Send a Token Standard transfer](../guides/send-tokens.md) for the full working example with all the Token Standard envelope fields populated.
 
 ## `prepareExecuteAndWait`
 
-Same flow as `prepareExecute`, but returns the spec-typed `TxChangedExecutedEvent` shape — `{ status, commandId, payload: { updateId, completionOffset } }`. Use this when you need typed access to the canonical result fields.
+Same flow as `prepareExecute`, but returns the typed execute result wrapped in a CIP-0103 `TxChangedExecutedEvent`. Use this when you need access to the canonical `updateId` and `completionOffset`.
 
 ### Params
 
@@ -88,15 +69,19 @@ Same as `prepareExecute`.
 ### Returns
 
 ```ts
-{
-  status: 'executed';
-  commandId: string;
-  payload: {
-    updateId: string;
-    completionOffset: number;
+PrepareExecuteAndWaitResult = {
+  tx: {
+    status: 'executed';
+    commandId: string;
+    payload: {
+      updateId: string;        // Canton ledger transaction ID
+      completionOffset: number;// Ledger offset where the transaction landed
+    };
   };
 }
 ```
+
+The outer `tx` wrapper matches the spec's `TxChangedExecutedEvent`. Don't strip it — strict-schema consumers of `@canton-network/dapp-sdk`'s `PrepareExecuteAndWaitResult` type expect the wrap.
 
 ### Errors
 
@@ -105,14 +90,15 @@ Same as `prepareExecute`.
 ### Example
 
 ```ts
-const result = await provider.request({
-  method: 'prepareExecuteAndWait',
-  params: { commands: [command] },
+import { prepareExecuteAndWait } from '@canton-network/dapp-sdk';
+
+const result = await prepareExecuteAndWait({
+  commands: [/* ... */],
 });
 
-console.log(`Transaction ${result.commandId} executed`);
-console.log(`Ledger updateId: ${result.payload.updateId}`);
-console.log(`Completion offset: ${result.payload.completionOffset}`);
+console.log(`Transaction ${result.tx.commandId} executed`);
+console.log(`Ledger updateId: ${result.tx.payload.updateId}`);
+console.log(`Completion offset: ${result.tx.payload.completionOffset}`);
 ```
 
 ### Notes
@@ -132,6 +118,8 @@ LedgerApiParams = {
   requestMethod: 'get' | 'post' | 'put' | 'delete';
   resource: string;        // path relative to the gateway's Ledger API base
   body?: Record<string, unknown> | string;  // JSON object or stringified JSON
+  query?: Record<string, string>;
+  path?: Record<string, string>;
 }
 ```
 
@@ -150,19 +138,15 @@ The gateway's response payload. Shape depends entirely on the resource queried.
 
 ### Example
 
-Read the active updates stream:
+Read an active update by ID:
 
 ```ts
-const result = await provider.request({
-  method: 'ledgerApi',
-  params: {
-    requestMethod: 'get',
-    resource: '/v2/state/active-contracts',
-    body: {
-      filter: { filtersByParty: { [account.partyId]: {} } },
-      verbose: true,
-    },
-  },
+import { ledgerApi } from '@canton-network/dapp-sdk';
+
+const result = await ledgerApi({
+  requestMethod: 'get',
+  resource: '/v2/updates/update-by-id',
+  body: { updateId: result.tx.payload.updateId },
 });
 ```
 

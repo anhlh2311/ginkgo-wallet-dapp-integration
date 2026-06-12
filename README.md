@@ -26,7 +26,6 @@ Both are equally supported. Examples in this doc default to the SDK; raw protoco
 As of the current release, Ginkgo's dApp API matches CIP-0103 v1 with these deliberate extensions:
 
 - `signTransaction` method (no CIP-0103 equivalent — kept for compatibility with existing Canton dApps).
-- `name` field on the `Network` shape alongside the spec's `networkId` + `ledgerApi` (UI display convenience).
 - `SPLICE_WALLET_EVENT` envelope variant for wallet→dApp push events (upstream extension SDK has no event delivery yet — see [extensions/ginkgo-vs-cip-0103.md](extensions/ginkgo-vs-cip-0103.md)).
 
 Full deviation list and rationale: [extensions/ginkgo-vs-cip-0103.md](extensions/ginkgo-vs-cip-0103.md).
