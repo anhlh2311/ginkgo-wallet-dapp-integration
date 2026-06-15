@@ -4,36 +4,49 @@ When a dApp calls a Ginkgo method, the request travels through four contexts bef
 
 ## Message flow
 
-```
-   ┌─────────────────────┐
-   │ dApp page (your JS) │
-   └──────────┬──────────┘
-              │ window.postMessage({ type: 'SPLICE_WALLET_REQUEST', request: ... })
-              ▼
-   ┌─────────────────────────────────────────┐
-   │ Content script (entrypoints/content.ts) │  Runs on every URL at document_start.
-   │ - shouldHandle(target) check            │  Routes to background; relays response back.
-   └──────────┬──────────────────────────────┘
-              │ chrome.runtime.sendMessage(msg)
-              ▼
-   ┌──────────────────────────────────────────────────────┐
-   │ Background service worker                            │  Manages session, keystore, network.
-   │ - dapp-api.handler.ts dispatcher                     │  Pops approval popup for sensitive methods.
-   │ - methods table → handleSignMessage, handleConnect, …│
-   └──────────┬───────────────────────────────────────────┘
-              │ For prepareExecute* / ledgerApi only:
-              ▼
-   ┌──────────────────────────────────────────────────────┐
-   │ Wallet's connected backend                           │  Implementation detail; abstracted from
-   │ (CIP-0103-conformant JSON-RPC facade over HTTPS)     │  the dApp surface. See the appendix for
-   │                                                      │  the reference backend Ginkgo ships against.
-   └──────────┬───────────────────────────────────────────┘
-              │ (Backend mediates access to)
-              ▼
-        Canton ledger
+```mermaid
+sequenceDiagram
+    autonumber
+    actor dApp as dApp page
+    participant CS as Content script<br/>(content.ts, ISOLATED world)
+    participant BG as Background SW<br/>(dapp-api.handler.ts)
+    participant Popup as Approval popup
+    participant BE as Wallet backend<br/>(CIP-0103 facade)
+    participant Ledger as Canton ledger
+
+    dApp->>CS: window.postMessage<br/>{ type: SPLICE_WALLET_REQUEST, request }
+    Note right of CS: shouldHandle(target) against chrome.runtime.id<br/>event.source === window
+    CS->>BG: chrome.runtime.sendMessage(msg)
+
+    opt connect / signMessage / signTransaction
+        BG->>Popup: chrome.windows.create(?id=uuid)
+        Popup-->>BG: DAPP_APPROVAL_RESULT(approved)
+        Note right of BG: chrome.windows.onRemoved → auto-reject
+    end
+
+    opt prepareExecute* / ledgerApi
+        BG->>BE: HTTPS JSON-RPC<br/>(Bearer auth, request.id preserved)
+        BE->>Ledger: mediated access
+        Ledger-->>BE: result
+        BE-->>BG: JSON-RPC response
+    end
+
+    BG-->>CS: sendResponse(result)
+    CS->>dApp: window.postMessage<br/>{ type: SPLICE_WALLET_RESPONSE, response }, '*'
+
+    Note over BG,dApp: Background-initiated, asynchronous (not in reply to a request):
+    BG->>CS: chrome.runtime.sendMessage(event)
+    CS->>dApp: window.postMessage<br/>{ type: SPLICE_WALLET_EVENT, event }, '*'
 ```
 
-Returns travel back along the same path: backend → background → content script → `window.postMessage({ type: 'SPLICE_WALLET_RESPONSE', response: { ... } })` → dApp's `message` listener.
+The return path mirrors the request: backend → background → content script → `window.postMessage` to the dApp's `message` listener. Replies are posted with `targetOrigin: '*'` because the content script runs on every URL and the dApp's origin isn't known to the wallet.
+
+Side-channels not shown as a main flow but worth knowing about:
+
+- **Discovery handshake** (EIP-6963-style). The SDK announces itself with `canton:requestProvider`; the content script replies with `canton:announceProvider`. A separate `SPLICE_WALLET_EXT_READY` / `SPLICE_WALLET_EXT_ACK` ping lets the SDK detect a wallet from popup contexts where the custom events don't propagate.
+- **MAIN-world bridge.** A second content script (`entrypoints/provider.content.ts`) runs in the page's MAIN world specifically so messages reach `window.opener` listeners in SDK discovery popups. The ISOLATED-world `content.ts` carries the JSON-RPC traffic.
+- **Approval popup loop.** For methods requiring user approval, the background generates a `requestId`, opens a popup with `?id=<uuid>`, and resolves a pending Promise on `DAPP_APPROVAL_RESULT`. If the user closes the popup without deciding, `chrome.windows.onRemoved` auto-rejects the pending call.
+- **Event push channel.** `statusChanged` / `accountsChanged` are pushed from the background through the content script as `SPLICE_WALLET_EVENT`, not as replies to any specific request. See [extensions](../extensions/ginkgo-vs-cip-0103.md).
 
 ## The four contexts
 
@@ -45,9 +58,11 @@ Your code. Runs in the page's normal JavaScript context with the page's origin. 
 
 Lives at `entrypoints/content.ts` in the wallet's source. Runs in an *isolated* world — it shares the DOM with your page but has its own JS heap. The bridge between page-context `window.postMessage` and extension-context `chrome.runtime.sendMessage`. Also handles:
 
-- **Provider discovery** — listens for `canton:requestProvider`, dispatches `canton:announceProvider` with Ginkgo's identity.
+- **Provider discovery** — listens for `canton:requestProvider`, dispatches `canton:announceProvider` with Ginkgo's identity. A companion script at `entrypoints/provider.content.ts` runs in the page's MAIN world so the discovery handshake also reaches popup contexts (`window.opener` listeners), where ISOLATED-world events don't propagate.
+- **Wallet-presence ping** — answers `SPLICE_WALLET_EXT_READY` with `SPLICE_WALLET_EXT_ACK`, separate from the request/response cycle. The SDK uses this to detect Ginkgo is installed before sending any JSON-RPC.
 - **Target routing** — checks `msg.target` against `chrome.runtime.id`; ignores messages addressed to a different wallet.
 - **Same-window filtering** — drops messages whose `event.source !== window` to prevent iframe injection.
+- **Reply origin** — posts responses with `targetOrigin: '*'`. Since the content script runs on all URLs, the wallet doesn't pin the dApp's origin at this hop; correlation is the dApp's responsibility via JSON-RPC `request.id`.
 
 ### 3. Background service worker
 
@@ -55,14 +70,15 @@ MV3 service worker at `entrypoints/background.ts`. Holds the user's session stat
 
 This is where:
 
-- Approval popups are triggered (via `chrome.windows.create`).
+- Approval popups are triggered (via `chrome.windows.create`) for `connect`, `signMessage`, and `signTransaction`. The background generates a `requestId`, the popup fetches the request details by that id, and the dApp call's Promise resolves on `DAPP_APPROVAL_RESULT`. Closing the popup without deciding auto-rejects via `chrome.windows.onRemoved`.
 - The private key is decrypted (only while the wallet is unlocked, held in a JS variable that dies when the service worker sleeps).
 - All `signMessage` / `signTransactionHash` calls happen.
 - HTTP calls to the wallet's connected backend are issued, for `prepareExecute*` and `ledgerApi`.
+- Push events (`statusChanged`, `accountsChanged`) are fanned out to dApps as `SPLICE_WALLET_EVENT`, independent of any request.
 
 ### 4. Wallet's connected backend
 
-A CIP-0103-conformant JSON-RPC facade running at the URL exposed by `getActiveNetwork().ledgerApi`. The backend mediates between Ginkgo and the underlying Canton ledger. From the dApp's perspective, this is an implementation detail — the dApp only sees the JSON-RPC method surface defined by CIP-0103.
+A CIP-0103-conformant JSON-RPC facade at the active network's `apiBaseUrl` (reported to dApps as `getActiveNetwork().ledgerApi`). The base URL is cached by the background at startup and re-set when the user switches networks; backend calls use `Authorization: Bearer ${authToken}` with a JSON-RPC 2.0 envelope. The backend mediates between Ginkgo and the underlying Canton ledger. From the dApp's perspective, this is an implementation detail — the dApp only sees the JSON-RPC method surface defined by CIP-0103.
 
 Conceptually the backend handles four responsibilities:
 
