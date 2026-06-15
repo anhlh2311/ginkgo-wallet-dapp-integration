@@ -15,7 +15,7 @@ All 12 dApp-callable JSON-RPC methods. Sortable at-a-glance reference; full deta
 | [`signTransaction`](signing.md#signtransaction) | `{ transactionHash }` | `{ signature, publicKey, fingerprint }` | ✅ | — | Ginkgo extension |
 | [`prepareExecute`](prepare-execute.md#prepareexecute) | `PrepareExecuteParams` | `null` | ✅ | ✅ | CIP-0103 |
 | [`prepareExecuteAndWait`](prepare-execute.md#prepareexecuteandwait) | `PrepareExecuteParams` | `{ tx: TxChangedExecutedEvent }` | ✅ | ✅ | CIP-0103 |
-| [`ledgerApi`](prepare-execute.md#ledgerapi) | `LedgerApiParams` | gateway response | — | ✅ | CIP-0103 |
+| [`ledgerApi`](prepare-execute.md#ledgerapi) | `LedgerApiParams` | backend response | — | ✅ | CIP-0103 |
 
 ## Common shapes
 
@@ -34,7 +34,7 @@ type JsonRpcResponse =
 ```ts
 interface Network {
   networkId: string;   // CAIP-2-compliant chain ID, e.g. 'canton:localnet', 'canton:devnet'
-  ledgerApi?: string;  // Base URL of the network's Wallet Gateway / Ledger API
+  ledgerApi?: string;  // Base URL of the wallet's connected backend (the CIP-0103 facade)
   accessToken?: string;// Optional bearer token; Ginkgo never emits this field
 }
 ```
@@ -120,7 +120,7 @@ All methods can return JSON-RPC errors with these codes. Per CIP-0103.
 |---|---|---|
 | `-32000` | `INVALID_INPUT` | Generic input validation failure. |
 | `-32001` | `RESOURCE_NOT_FOUND` | Requested entity doesn't exist on the backend. |
-| `-32002` | `RESOURCE_UNAVAILABLE` | Backend reachable but resource is currently unavailable (e.g., wallet facade not configured for this network). |
+| `-32002` | `RESOURCE_UNAVAILABLE` | Backend reachable but the requested resource is unavailable or unauthorized (e.g., facade not configured for this network, or requesting active contracts of a party the user doesn't own). |
 | `-32003` | `TRANSACTION_REJECTED` | Backend rejected the prepared transaction. |
 | `-32004` | `METHOD_NOT_SUPPORTED` | Method exists on the spec but Ginkgo doesn't implement it. |
 | `-32005` | `LIMIT_EXCEEDED` | Rate or size limit hit. |

@@ -7,7 +7,7 @@ Ginkgo is a Canton Network wallet that lives in your browser as an extension. dA
 - **Holds the user's Canton signing key** (Ed25519, base64-encoded). Encrypted at rest with the user's password (AES-GCM, PBKDF2-derived key).
 - **Identifies the user as a Canton party** — `partyId` in the form `hint::fingerprint`, registered on a network.
 - **Signs messages and transactions** the dApp asks for, after the user explicitly approves each one via popup.
-- **Submits prepared transactions** to the Canton ledger via a Wallet Gateway backend, returning the final `updateId` and `completionOffset`.
+- **Submits prepared transactions** to the Canton ledger via its connected backend, returning the final `updateId` and `completionOffset`.
 
 ## What CIP-0103 standardizes
 
@@ -42,9 +42,9 @@ A dApp **cannot** use Ginkgo to:
 | `getPrimaryAccount` | No | No | `Wallet` |
 | `signMessage` | No (local Ed25519) | **Yes** | `{ signature }` |
 | `signTransaction` (Ginkgo extension) | No (local Ed25519) | **Yes** | `{ signature, publicKey, fingerprint }` |
-| `prepareExecute` | **Yes** (Wallet Gateway) | **Yes** (after gateway response) | `null` |
-| `prepareExecuteAndWait` | **Yes** (Wallet Gateway) | **Yes** (after gateway response) | `{ tx: TxChangedExecutedEvent }` |
-| `ledgerApi` | **Yes** (proxies to gateway) | No | gateway response |
+| `prepareExecute` | **Yes** (wallet's backend) | **Yes** (after prepare response) | `null` |
+| `prepareExecuteAndWait` | **Yes** (wallet's backend) | **Yes** (after prepare response) | `{ tx: TxChangedExecutedEvent }` |
+| `ledgerApi` | **Yes** (proxied to allowlisted resources) | No | backend response |
 
 Full reference: [reference/overview.md](../reference/overview.md).
 

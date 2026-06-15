@@ -21,19 +21,19 @@ When a dApp calls a Ginkgo method, the request travels through four contexts bef
    │ - dapp-api.handler.ts dispatcher                     │  Pops approval popup for sensitive methods.
    │ - methods table → handleSignMessage, handleConnect, …│
    └──────────┬───────────────────────────────────────────┘
-              │ For prepareExecute / ledgerApi:
+              │ For prepareExecute* / ledgerApi only:
               ▼
-   ┌────────────────────────────────────────────────────────────┐
-   │ Wallet Gateway (the wallet's connected backend)            │  REST + JSON-RPC facade.
-   │ POST /api/v0/dapp { method, params }  (dApp-context calls) │  /api/v0/dapp = unauthenticated
-   │ POST /api/v0/user { method, params }  (user-auth'd calls)  │  /api/v0/user = wallet user bearer
-   └────────────────────────────────────────────────────────────┘
-              │
+   ┌──────────────────────────────────────────────────────┐
+   │ Wallet's connected backend                           │  Implementation detail; abstracted from
+   │ (CIP-0103-conformant JSON-RPC facade over HTTPS)     │  the dApp surface. See the appendix for
+   │                                                      │  the reference backend Ginkgo ships against.
+   └──────────┬───────────────────────────────────────────┘
+              │ (Backend mediates access to)
               ▼
         Canton ledger
 ```
 
-Returns travel back along the same path: gateway → background → content script → `window.postMessage({ type: 'SPLICE_WALLET_RESPONSE', response: { ... } })` → dApp's `message` listener.
+Returns travel back along the same path: backend → background → content script → `window.postMessage({ type: 'SPLICE_WALLET_RESPONSE', response: { ... } })` → dApp's `message` listener.
 
 ## The four contexts
 
@@ -58,25 +58,29 @@ This is where:
 - Approval popups are triggered (via `chrome.windows.create`).
 - The private key is decrypted (only while the wallet is unlocked, held in a JS variable that dies when the service worker sleeps).
 - All `signMessage` / `signTransactionHash` calls happen.
-- Gateway HTTP requests are issued (`gatewayFacadeDappRpc` / `gatewayFacadeUserRpc`).
+- HTTP calls to the wallet's connected backend are issued, for `prepareExecute*` and `ledgerApi`.
 
-### 4. Wallet Gateway (Canton-exchange backend)
+### 4. Wallet's connected backend
 
-A separate service the wallet talks to. On a local development setup it's at `http://localhost:3003`; on devnet/testnet/mainnet deployments it's whatever URL the wallet's network configuration points to (queryable via `getActiveNetwork().ledgerApi`). Implements two JSON-RPC facades:
+A CIP-0103-conformant JSON-RPC facade running at the URL exposed by `getActiveNetwork().ledgerApi`. The backend mediates between Ginkgo and the underlying Canton ledger. From the dApp's perspective, this is an implementation detail — the dApp only sees the JSON-RPC method surface defined by CIP-0103.
 
-- `POST /api/v0/dapp` — unauthenticated. Used for `prepareExecute` (taking a dApp-issued command and turning it into a prepared transaction the user can review).
-- `POST /api/v0/user` — authenticated with the *wallet user's* bearer token. Used for `getTransaction`, `execute`, `deleteTransaction`. **This is the auth boundary** — dApps don't authenticate themselves; they piggyback on the active wallet user's session.
+Conceptually the backend handles four responsibilities:
 
-The Gateway in turn talks to a Canton participant node, signing relay, and ledger API.
+- **Translate `prepareExecute` commands into Canton transactions.** Validates the command against a Token Standard template allowlist, builds the prepared transaction, hands back a `commandId` and the transaction hash to sign.
+- **Authenticate `execute` calls with the wallet user's session.** A separate authenticated endpoint accepts the signed transaction and submits it to the Canton participant node.
+- **Proxy `ledgerApi` requests to the Canton Ledger API.** Only whitelisted resources and methods pass through; everything else returns `-32004 METHOD_NOT_SUPPORTED`.
+- **Hide gateway/topology internals.** The dApp doesn't see Wallet Gateway endpoints, participant node URLs, signing relays, or any infrastructure beyond the JSON-RPC facade.
+
+Different deployments (local devnet, public devnet/testnet/mainnet) may run different backend implementations as long as they expose the CIP-0103 facade contract. For the specific backend Ginkgo ships against, including endpoint addresses, exact allowlisted resources, Token Standard templates, and authentication mechanics, see [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md).
 
 ## Why dApps can't see the wallet's private endpoints
 
-The wallet's own backend has endpoints like `/transfer-offer/history`, `/wallet/transfer-preapproval/status`, `/faucet/*`, `/auth/me`. These are wallet UI features — they appear in the popup's tabs. **They're not exposed to dApps** because:
+The wallet's backend also exposes endpoints used only by Ginkgo's own popup UI — transfer-offer history, faucet, preapproval registration, OAuth callbacks. **None of those are reachable from a dApp** because:
 
 1. They'd let any visited website read the user's full transfer history and active session metadata. That's a privacy leak the spec deliberately avoids.
 2. The CIP-0103 surface is intentionally narrow — connect, sign, prepare, execute. Anything else lives behind a different abstraction.
 
-If a dApp wants something more than the spec offers, it should call the Wallet Gateway directly with the user's permission (e.g., via `ledgerApi` for raw Canton Ledger API access).
+If a dApp needs read access to Canton ledger state beyond what `getPrimaryAccount` / `listAccounts` exposes, `ledgerApi` is the escape hatch — but constrained to the backend's allowlist (see appendix).
 
 ## Lifecycle notes
 

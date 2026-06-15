@@ -1,10 +1,10 @@
 # Prepare and execute
 
-The transaction submission methods. These are the primary way dApps submit anything to the Canton ledger through Ginkgo. All three talk to the wallet's connected backend (the Wallet Gateway).
+The transaction submission methods. These are the primary way dApps submit anything to the Canton ledger through Ginkgo. All three route through the wallet's connected backend, which mediates access to the underlying Canton ledger and enforces CIP-0103 allowlists on what can be submitted. For specifics of the backend Ginkgo ships against, see [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md).
 
 ## `prepareExecute`
 
-Full transaction lifecycle: dApp submits a command, gateway prepares a Canton transaction, user approves, wallet signs locally, gateway executes on the ledger. Returns `null` per CIP-0103 — use [`prepareExecuteAndWait`](#prepareexecuteandwait) if you want the execute result.
+Full transaction lifecycle: dApp submits a command, backend prepares a Canton transaction, user approves, wallet signs locally, backend executes on the ledger. Returns `null` per CIP-0103 — use [`prepareExecuteAndWait`](#prepareexecuteandwait) if you want the execute result.
 
 ### Params
 
@@ -25,7 +25,7 @@ type GatewayCommand = {
 };
 ```
 
-The exact `commands` shape depends on the Canton template package the gateway is configured to allow. See the [send-tokens guide](../guides/send-tokens.md) for a concrete example.
+The exact `commands` shape depends on the Canton template package the backend is configured to allow. The backend enforces a strict `(templateId, choiceName)` allowlist — commands outside the allowlist return `-32003 TRANSACTION_REJECTED`. The default allowlist covers the Token Standard transfer + allocation flows; see [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md#token-standard-command-templates) for the full table. See the [send-tokens guide](../guides/send-tokens.md) for a concrete example.
 
 ### Returns
 
@@ -37,11 +37,12 @@ Per the canonical CIP-0103 OpenRPC schema, `prepareExecute`'s result is `Null`. 
 
 ### Errors
 
-- `4001 USER_REJECTED` — user declined the approval popup. Ginkgo also calls `deleteTransaction` on the gateway to clean up the pending command.
+- `4001 USER_REJECTED` — user declined the approval popup. Ginkgo also cleans up the pending command on the backend.
 - `4100 UNAUTHORIZED` — wallet is locked or no party is onboarded.
-- `-32002 RESOURCE_UNAVAILABLE` — wallet facade is not configured for the active network.
-- `-32603 INTERNAL_ERROR` — gateway returned an unexpected response, or no `commandId` could be extracted from the prepare reply.
-- Forwarded gateway errors with their original codes (`-32000` to `-32005`) and messages.
+- `-32002 RESOURCE_UNAVAILABLE` — backend is not configured for the active network.
+- `-32003 TRANSACTION_REJECTED` — backend's Token Standard allowlist rejected the command, or the prepared transaction failed validation.
+- `-32603 INTERNAL_ERROR` — backend returned an unexpected response, or no `commandId` could be extracted from the prepare reply.
+- Other backend errors with their original codes (`-32000` to `-32005`) and messages are forwarded verbatim.
 
 ### Example
 
@@ -103,20 +104,22 @@ console.log(`Completion offset: ${result.tx.payload.completionOffset}`);
 
 ### Notes
 
-- `commandId` is the gateway-assigned identifier extracted from the prepare-step response. Stable across the prepare/sign/execute lifecycle.
+- `commandId` is the backend-assigned identifier extracted from the prepare-step response. Stable across the prepare/sign/execute lifecycle.
 - `updateId` is the Canton ledger transaction ID. Pass it to `ledgerApi` or your own Canton tooling to read the resulting events.
 - `completionOffset` is the ledger offset where the transaction landed. Useful for resuming a stream of updates from this point forward.
 
 ## `ledgerApi`
 
-Generic proxy to the Wallet Gateway's Ledger API. Used for read-only ledger queries from a dApp. No approval popup — these are pull-style data fetches, not state changes.
+Allowlisted proxy to a small subset of the Canton Ledger API, mediated by the wallet's backend. Used for read-only ledger queries. No approval popup — these are pull-style data fetches, not state changes.
+
+**The backend enforces a strict allowlist on `(resource, requestMethod)` pairs.** Requests for anything outside the allowlist return `-32004 METHOD_NOT_SUPPORTED`. The CIP-0103 spec defines the method signature; the actual allowlist is a deployment decision of the backend Ginkgo ships against.
 
 ### Params
 
 ```ts
 LedgerApiParams = {
   requestMethod: 'get' | 'post' | 'put' | 'delete';
-  resource: string;        // path relative to the gateway's Ledger API base
+  resource: string;        // path relative to the Canton Ledger API base
   body?: Record<string, unknown> | string;  // JSON object or stringified JSON
   query?: Record<string, string>;
   path?: Record<string, string>;
@@ -127,31 +130,49 @@ LedgerApiParams = {
 
 ### Returns
 
-The gateway's response payload. Shape depends entirely on the resource queried.
+The backend's response payload. Shape depends entirely on the resource queried.
 
 ### Errors
 
 - `4100 UNAUTHORIZED` — wallet is locked.
-- `-32002 RESOURCE_UNAVAILABLE` — wallet facade not configured for the active network.
-- `-32001 RESOURCE_NOT_FOUND` — gateway returned 404 for the resource.
-- Forwarded gateway errors.
+- `-32002 RESOURCE_UNAVAILABLE` — backend not configured for the active network, or the requested resource requires permissions the wallet user doesn't have (e.g., reading active contracts of a party they don't own).
+- `-32001 RESOURCE_NOT_FOUND` — Canton Ledger API returned 404 for the resource.
+- `-32004 METHOD_NOT_SUPPORTED` — the `(resource, requestMethod)` pair isn't in the backend's allowlist.
+- Forwarded ledger errors with their original codes.
+
+### What the allowlist looks like in practice
+
+The reference backend that Ginkgo ships against currently allows three resources:
+
+| Resource | Allowed methods | Notes |
+|---|---|---|
+| `/v2/version` | `GET` | Ledger API version metadata. |
+| `/v2/state/ledger-end` | `GET` | Most recent ledger offset. |
+| `/v2/state/active-contracts` | `POST` | Body must include `filter.filtersByParty` naming only parties the wallet user owns. `filtersForAnyParty` is rejected. |
+
+Other resources return `-32004 METHOD_NOT_SUPPORTED`. See [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md#ledgerapi-resource-allowlist) for the up-to-date list.
 
 ### Example
 
-Read an active update by ID:
+Read an update by ID — note this is **not** currently in the default allowlist; the example illustrates the shape but would return `-32004` against the reference backend until the resource is whitelisted:
 
 ```ts
 import { ledgerApi } from '@canton-network/dapp-sdk';
 
+// Currently allowed: active contracts for a party the wallet user owns.
+const account = await listAccounts().then((accs) => accs[0]);
 const result = await ledgerApi({
-  requestMethod: 'get',
-  resource: '/v2/updates/update-by-id',
-  body: { updateId: result.tx.payload.updateId },
+  requestMethod: 'post',
+  resource: '/v2/state/active-contracts',
+  body: {
+    filter: { filtersByParty: { [account.partyId]: {} } },
+    verbose: true,
+  },
 });
 ```
 
 ### Notes
 
-- This is the escape hatch for things CIP-0103 doesn't otherwise expose. Use sparingly — the gateway's Ledger API surface may change without notice and isn't covered by the CIP-0103 stability guarantees.
-- All requests are sent with the wallet user's bearer token attached. The dApp does not authenticate itself.
-- Whatever restrictions exist on the resource (e.g., Token Standard choice allowlists) live on the gateway side, not in the wallet.
+- This is the escape hatch for read-only Canton ledger queries that CIP-0103 doesn't otherwise expose. The backend's allowlist may grow over time as new resources are vetted; check the appendix or your deployment's docs for the current scope.
+- All requests are mediated by the backend, which strips/transforms requests against its allowlist before reaching the underlying Canton Ledger API. The dApp does not authenticate itself; the wallet's session is what the backend sees.
+- Restrictions on what counts as "your party" (for party-filtered resources) live on the backend side.

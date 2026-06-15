@@ -25,3 +25,7 @@
 ## Extensions
 
 - [Ginkgo vs CIP-0103](extensions/ginkgo-vs-cip-0103.md)
+
+## Appendix
+
+- [Ginkgo's backend implementation](appendix/ginkgo-backend.md)

@@ -8,7 +8,7 @@ Ginkgo's trust model is straightforward but has a few subtleties worth understan
 |---|---|---|
 | **dApp page** | The page's origin (e.g., `https://your-dapp.example`) | Implicit — Ginkgo records the origin and uses it in approval popups. |
 | **Wallet user** | A signed-in Canton party (`partyId`) | The user signed in to Ginkgo with Google OAuth + a password before any dApp call. |
-| **Backend (Wallet Gateway)** | The wallet user's bearer token | Ginkgo holds an HS256 JWT in `sessionStore.authToken`, attaches it to every `/api/v0/user/*` call. |
+| **Wallet's connected backend** | The wallet user's bearer token | Ginkgo holds the JWT obtained during OAuth onboarding in `sessionStore.authToken`, attaches it to authenticated calls (see [appendix](../appendix/ginkgo-backend.md)). |
 
 **The dApp does not have its own credentials.** When you call `prepareExecute`, the wallet uses the user's bearer token to talk to the Gateway. From the Gateway's perspective, every dApp-initiated request is "the user is doing this." This is the same trust model as Ethereum wallet integrations.
 

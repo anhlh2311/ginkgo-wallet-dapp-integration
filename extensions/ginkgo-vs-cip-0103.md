@@ -98,9 +98,9 @@ For most dApps, `listAccounts()[0]` (or `accounts.find(a => a.primary)`) gives t
 
 CIP-0103 defines `txChanged` lifecycle events (`pending` → `signed` → `executed`/`failed`) that fire during a `prepareExecute` call so the dApp can show progress UI without polling.
 
-**Status in Ginkgo:** not emitted. Our `prepareExecute` is "fire and resolve" — the promise resolves with `null` (per spec) after the gateway returns the execute result.
+**Status in Ginkgo:** not emitted. Our `prepareExecute` is "fire and resolve" — the promise resolves with `null` (per spec) after the backend completes the prepare + execute steps.
 
-**Status upstream:** the `@canton-network/dapp-sdk`'s `DappSyncProvider` (used for extension flows) uses `WindowTransport`, which is request/response only. It has no listener for these events. The reference wallet-gateway extension stubs `txChanged` with `throw new Error('Only for events.')`. So even if Ginkgo emitted spec-conformant events, no SDK consumer would receive them.
+**Status upstream:** the `@canton-network/dapp-sdk`'s `DappSyncProvider` (used for extension flows) uses `WindowTransport`, which is request/response only. It has no listener for these events. The reference Splice wallet-gateway extension stubs `txChanged` with `throw new Error('Only for events.')`. So even if Ginkgo emitted spec-conformant events, no SDK consumer would receive them.
 
 **When this will be fixed:** awaiting upstream wiring of an event delivery channel for the extension flow. Track at [hyperledger-labs/splice-wallet-kernel](https://github.com/hyperledger-labs/splice-wallet-kernel).
 

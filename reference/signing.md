@@ -56,7 +56,7 @@ const verified = nacl.sign.detached.verify(
 
 ## `signTransaction`
 
-Sign a 32-byte transaction hash. **Ginkgo extension** — not part of CIP-0103. Provided for use cases where the dApp computes its own prepared-transaction hash and wants only the signature, without going through the gateway-mediated `prepareExecute` flow.
+Sign a 32-byte transaction hash. **Ginkgo extension** — not part of CIP-0103. Provided for use cases where the dApp computes its own prepared-transaction hash and wants only the signature, without going through the backend-mediated `prepareExecute` flow.
 
 If you don't have an existing reason to use this, prefer `prepareExecute` instead — it handles the prepare/sign/submit lifecycle correctly and matches the spec.
 
@@ -130,5 +130,5 @@ In code: `nacl.sign.detached(base64Decode(transactionHash), privateKey)`.
 
 ### Notes
 
-- For Canton transaction signing in practice, use `prepareExecute` instead. It calls `signTransaction`-equivalent logic internally with a real prepared hash from the gateway, and handles submission. `signTransaction` is a primitive for advanced cases.
+- For Canton transaction signing in practice, use `prepareExecute` instead. It calls `signTransaction`-equivalent logic internally with a real prepared hash from the backend, and handles submission. `signTransaction` is a primitive for advanced cases.
 - The approval popup displays the base64 hash string. Users should treat any prompt to sign a raw hash with caution — it's intentionally less informative than a `prepareExecute` prompt and harder to audit.
