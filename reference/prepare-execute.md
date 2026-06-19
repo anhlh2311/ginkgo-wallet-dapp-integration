@@ -41,7 +41,7 @@ Per the canonical CIP-0103 OpenRPC schema, `prepareExecute`'s result is `Null`. 
 - `4100 UNAUTHORIZED` — wallet is locked or no party is onboarded.
 - `-32002 RESOURCE_UNAVAILABLE` — backend is not configured for the active network.
 - `-32003 TRANSACTION_REJECTED` — backend's Token Standard allowlist rejected the command, or the prepared transaction failed validation.
-- `-32603 INTERNAL_ERROR` — backend returned an unexpected response, or no `commandId` could be extracted from the prepare reply.
+- `-32603 INTERNAL_ERROR` — backend returned an unexpected response, or the prepare reply didn't carry the identifiers Ginkgo needs for the user-API follow-ups.
 - Other backend errors with their original codes (`-32000` to `-32005`) and messages are forwarded verbatim.
 
 ### Example

@@ -29,8 +29,8 @@ Two HTTP endpoints on the backend, both speaking JSON-RPC 2.0. The wallet sends 
 
 ### Why two endpoints
 
-- `/api/v0/dapp` is the unauthenticated entry point. A dApp request that hits Ginkgo's `prepareExecute` triggers an HTTP call from the wallet's background to this endpoint, carrying just the dApp-supplied command(s). The backend prepares a Canton transaction and returns a `userUrl` containing a `commandId` query parameter. The dApp is never told this URL — Ginkgo extracts the `commandId` and uses it internally.
-- `/api/v0/user` is the authenticated follow-up. After the user approves in Ginkgo's popup, the wallet's background calls this endpoint (with the user's session bearer token) to fetch the prepared transaction (`getTransaction`), submit the signed transaction (`execute`), or clean up on rejection (`deleteTransaction`).
+- `/api/v0/dapp` is the unauthenticated entry point. A dApp request that hits Ginkgo's `prepareExecute` triggers an HTTP call from the wallet's background to this endpoint, carrying just the dApp-supplied command(s). The backend prepares a Canton transaction and returns a `userUrl` whose query string carries two identifiers: `transactionId` (the gateway store's primary key, used as the lookup parameter for every user-API call) and `commandId` (the application-level id that surfaces back to the dApp as `TxChangedExecutedEvent.commandId`). The dApp never sees the URL — Ginkgo extracts both ids and uses them internally.
+- `/api/v0/user` is the authenticated follow-up. After the user approves in Ginkgo's popup, the wallet's background calls this endpoint (with the user's session bearer token), keyed on `transactionId`, to fetch the prepared transaction (`getTransaction`), submit the signed transaction (`execute`), or clean up on rejection (`deleteTransaction`). This wire contract is pinned to `wallet-gateway-remote` v1.1.0+.
 
 The two endpoints are how Ginkgo enforces the user-approval gate: the prepare step is cheap and unauthenticated; the execute step requires a signed, user-approved transaction.
 

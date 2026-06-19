@@ -98,7 +98,7 @@ console.log(`  completionOffset: ${result.tx.payload.completionOffset}`);
 
 4. **Sign locally.** The wallet decrypts the user's private key from the in-memory cache and computes `signTransactionHash(preparedTransactionHash, privateKey)`. The signature is base64-encoded. The private key never leaves the wallet.
 
-5. **Execute.** Ginkgo submits the signature + `commandId` + party identity back to the backend (still authenticated as the wallet user). The backend orchestrates submission to the Canton ledger and returns the `updateId` + `completionOffset`.
+5. **Execute.** Ginkgo submits the signed transaction back to the backend (still authenticated as the wallet user). The backend orchestrates submission to the Canton ledger and returns the `updateId` + `completionOffset`.
 
 6. **Return to dApp.** The wallet wraps the result in CIP-0103's `TxChangedExecutedEvent` shape (`{ tx: { status: 'executed', commandId, payload: { updateId, completionOffset } } }`) and resolves your `prepareExecuteAndWait` promise.
 
