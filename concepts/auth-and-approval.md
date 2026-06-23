@@ -8,9 +8,9 @@ Ginkgo's trust model is straightforward but has a few subtleties worth understan
 |---|---|---|
 | **dApp page** | The page's origin (e.g., `https://your-dapp.example`) | Implicit — Ginkgo records the origin and uses it in approval popups. |
 | **Wallet user** | A signed-in Canton party (`partyId`) | The user signed in to Ginkgo with Google OAuth + a password before any dApp call. |
-| **Wallet's connected backend** | The wallet user's bearer token | Ginkgo holds the JWT obtained during OAuth onboarding in `sessionStore.authToken`, attaches it to authenticated calls (see [appendix](../appendix/ginkgo-backend.md)). |
+| **Wallet's connected backend** | The wallet user's bearer token | Ginkgo holds the bearer token obtained during Google OAuth sign-in in `sessionStore.authToken` and attaches it to authenticated calls (see [appendix](../appendix/ginkgo-backend.md)). |
 
-**The dApp does not have its own credentials.** When you call `prepareExecute`, the wallet uses the user's bearer token to talk to the Gateway. From the Gateway's perspective, every dApp-initiated request is "the user is doing this." This is the same trust model as Ethereum wallet integrations.
+**The dApp does not have its own credentials.** When you call `prepareExecute`, the wallet uses the user's bearer token to talk to its connected backend. From the backend's perspective, every dApp-initiated request is "the user is doing this." This is the same trust model as Ethereum wallet integrations.
 
 This has two implications:
 
@@ -23,7 +23,7 @@ Methods in the `APPROVAL_REQUIRED_METHODS` set show an approval popup before the
 
 | Method | Approval popup? | What the user sees |
 |---|---|---|
-| `connect` | **Yes** | "Connect to <origin>?" Approve once per session. |
+| `connect` | **Yes** | "Connect to <origin>?" Shown on each `connect` call. |
 | `disconnect` | No (no-op) | — |
 | `isConnected` / `status` | No | — |
 | `getActiveNetwork` | No | — |
@@ -96,6 +96,6 @@ A dApp cannot:
 
 - See what other dApps are connected.
 - Call methods on behalf of any party other than the active one.
-- Bypass the approval popup, even with prior approval — every sensitive call is reapproved unless the wallet's session is still warm from a recent approve (depending on the user's session settings; Ginkgo doesn't currently support "approve all from this origin" — every call shows a popup).
+- Bypass the approval popup — every sensitive call shows a popup. Ginkgo doesn't currently support "approve all from this origin".
 
 If a dApp wants persistent connection state, store the user's `partyId` and `networkId` locally after `connect`, and reconcile on each session.

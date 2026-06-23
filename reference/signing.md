@@ -124,7 +124,7 @@ const verified = nacl.sign.detached.verify(
 
 ### Pre-image semantics
 
-The signature is over the **raw bytes** that `transactionHash` decodes to — not the UTF-8 encoding of the base64 string. This matches what Canton's signing relay expects when handed a `preparedTransactionHash`.
+The signature is over the **raw bytes** that `transactionHash` decodes to — not the UTF-8 encoding of the base64 string. This matches what Canton expects when verifying a signature over a `preparedTransactionHash`.
 
 In code: `nacl.sign.detached(base64Decode(transactionHash), privateKey)`.
 

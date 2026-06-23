@@ -93,7 +93,7 @@ const cachedPublicKey = accounts[0]?.publicKey;
 
 - `partyId` is the canonical Canton identifier. Format is `<hint>::<fingerprint>`, where `hint` is human-chosen (often the user's email local-part or wallet handle) and `fingerprint` is a deterministic hash of the public key registered with the Canton synchronizer.
 - `publicKey` is base64-encoded as standard base64 (with `=` padding). 32 raw bytes → 44 characters base64.
-- `signingProviderId` is `'ginkgo'`. The SDK uses this to route signing-relay traffic; for direct dApp usage, you can ignore it.
+- `signingProviderId` is `'ginkgo'` — it identifies Ginkgo as the account's signing provider. For direct dApp usage you can ignore it.
 - `namespace === partyId.split('::')[1]` (always; pre-split for convenience).
 - `hint === partyId.split('::')[0]` (always).
 - `networkId` is in CAIP-2 form (`canton:<network>`), matching the value returned by `getActiveNetwork().networkId`.

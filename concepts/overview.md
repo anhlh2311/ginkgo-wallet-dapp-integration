@@ -60,4 +60,4 @@ If you've integrated MetaMask or another EIP-1193 wallet, the mental model carri
 - `wallet_switchEthereumChain` → no equivalent; users switch networks in the wallet UI
 - `accountsChanged` / `chainChanged` events → see [extensions](../extensions/ginkgo-vs-cip-0103.md)
 
-Canton's data model is more sophisticated than Ethereum's account model — there's the notion of a *party*, *Daml contracts*, *interactive submission*, and *external party amulet rules*. The wallet handles those details on your behalf via `prepareExecute`. You usually just submit a high-level command (e.g., "transfer 10 tokens from party X to party Y") and the wallet + Gateway turn it into a signable Canton transaction.
+Canton's data model is more sophisticated than Ethereum's account model — there's the notion of a *party*, *Daml contracts*, *interactive submission*, and *external party amulet rules*. The wallet handles those details on your behalf via `prepareExecute`. You usually just submit a high-level command (e.g., "transfer 10 tokens from party X to party Y") and the wallet + its backend turn it into a signable Canton transaction.

@@ -15,7 +15,7 @@ This is the canonical "submit a transaction" pattern. Anything more elaborate (m
 - Ginkgo wallet installed, unlocked, with the user onboarded to a Canton party on the network of your choice.
 - A CIP-0103-conformant backend reachable at the network's `ledgerApi` URL (Ginkgo connects to it automatically). See [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md) for the specific backend Ginkgo ships against and what it enforces.
 - The recipient's `partyId`. In the example below it's a placeholder — substitute a real party on the same network.
-- The choice you want to exercise must be in the backend's Token Standard template allowlist. The wallet doesn't enforce this client-side; the backend rejects disallowed templates with `-32003 TRANSACTION_REJECTED`.
+- The choice you want to exercise must be in the backend's Token Standard `(templateId, choice)` allowlist. The wallet doesn't enforce this client-side; the backend rejects disallowed templates with `-32003 TRANSACTION_REJECTED`.
 
 ## Complete example
 
@@ -42,44 +42,47 @@ const network = await provider!.request({ method: 'getActiveNetwork' });
 console.log(`Sending from ${sender.partyId} on ${network.networkId}`);
 
 // 3. Build the Token Standard transfer command.
-//    Substitute real values for receiverPartyId and dsoPartyId — these are
-//    placeholders illustrating the shape only.
-const receiverPartyId = 'bob::1220abc...def0';
-const dsoPartyId      = 'IDSO::1220beef...cafe';
+//    TransferFactory_Transfer is an EXERCISE on the TransferFactory contract.
+//    The factory contractId and the contracts to disclose come from the Token
+//    Standard registry's getTransferFactory API (out of scope here). Substitute
+//    real values for the placeholders below.
+const receiverPartyId   = 'bob::1220abc...def0';
+const dsoPartyId        = 'IDSO::1220beef...cafe';
+const transferFactoryId = '00fac...';   // from registry getTransferFactory
 
+// Each entry in `commands` is a Canton JSON Ledger API command — a tagged union
+// ({ CreateCommand } or { ExerciseCommand }).
 const command = {
-  templateId: '#Splice.Api.Token.TransferInstructionV1:TransferFactory',
-  choiceName: 'TransferFactory_Transfer',
-  arguments: {
-    expectedAdmin: dsoPartyId,
-    transfer: {
-      sender: sender.partyId,
-      receiver: receiverPartyId,
-      amount: '10.0',
-      instrumentId: {
-        admin: dsoPartyId,
-        id: 'Amulet',
+  ExerciseCommand: {
+    templateId: '#Splice.Api.Token.TransferInstructionV1:TransferFactory',
+    contractId: transferFactoryId,
+    choice: 'TransferFactory_Transfer',
+    choiceArgument: {
+      expectedAdmin: dsoPartyId,
+      transfer: {
+        sender: sender.partyId,
+        receiver: receiverPartyId,
+        amount: '10.0',
+        instrumentId: { admin: dsoPartyId, id: 'Amulet' },
+        requestedAt: new Date().toISOString(),
+        executeBefore: new Date(Date.now() + 60 * 60_000).toISOString(),
+        inputHoldingCids: [],   // backend fills these in during prepare
+        meta: { values: [{ _1: 'splice.lfdecentralizedtrust.org/reason', _2: '' }] },
       },
-      requestedAt: new Date().toISOString(),
-      executeBefore: new Date(Date.now() + 60 * 60_000).toISOString(),
-      inputHoldingCids: [],   // backend fills these in during prepare
-      meta: {
-        values: [
-          { _1: 'splice.lfdecentralizedtrust.org/reason', _2: '' },
-        ],
-      },
-    },
-    extraArgs: {
-      context: { values: [] },
-      meta: { values: [] },
+      extraArgs: { context: { values: [] }, meta: { values: [] } },
     },
   },
 };
 
 // 4. prepareExecuteAndWait does the whole prepare → approve → sign → execute dance.
 //    The user sees an approval popup showing the prepared transaction details
-//    and clicks Approve. The wallet then signs and submits.
-const result = await prepareExecuteAndWait({ commands: [command] });
+//    and clicks Approve. The wallet then signs and submits. `disclosedContracts`
+//    (also from getTransferFactory) is normally required for factory exercises.
+const result = await prepareExecuteAndWait({
+  actAs: [sender.partyId],
+  commands: [command],
+  // disclosedContracts: [ ... ],   // from registry getTransferFactory
+});
 
 // 5. Inspect the result. Note the `tx` wrapper per CIP-0103.
 console.log(`✅ Transfer executed`);
@@ -90,7 +93,7 @@ console.log(`  completionOffset: ${result.tx.payload.completionOffset}`);
 
 ## What happens behind the scenes
 
-1. **Prepare.** Ginkgo forwards the command(s) to the wallet's backend, which validates the (templateId, choiceName) against its Token Standard allowlist, builds a Canton transaction, computes the `preparedTransactionHash`, and returns a `commandId`.
+1. **Prepare.** Ginkgo forwards the command(s) to the wallet's backend, which validates the (templateId, choice) against its Token Standard allowlist, builds a Canton transaction, computes the `preparedTransactionHash`, and returns a `commandId`.
 
 2. **Approve.** The wallet pops the approval window in the user's browser, showing the prepared command details. The user clicks Approve (or Reject — if rejected, the wallet cleans up the pending command server-side and your `prepareExecuteAndWait` call rejects with `4001 USER_REJECTED`).
 

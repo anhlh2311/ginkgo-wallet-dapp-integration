@@ -85,7 +85,7 @@ Conceptually the backend handles four responsibilities:
 - **Translate `prepareExecute` commands into Canton transactions.** Validates the command against a Token Standard template allowlist, builds the prepared transaction, hands back a `commandId` and the transaction hash to sign.
 - **Authenticate `execute` calls with the wallet user's session.** A separate authenticated endpoint accepts the signed transaction and submits it to the Canton participant node.
 - **Proxy `ledgerApi` requests to the Canton Ledger API.** Only whitelisted resources and methods pass through; everything else returns `-32004 METHOD_NOT_SUPPORTED`.
-- **Hide gateway/topology internals.** The dApp doesn't see Wallet Gateway endpoints, participant node URLs, signing relays, or any infrastructure beyond the JSON-RPC facade.
+- **Hide backend/topology internals.** The dApp doesn't see backend endpoints, participant node URLs, or any infrastructure beyond the JSON-RPC facade.
 
 Different deployments (local devnet, public devnet/testnet/mainnet) may run different backend implementations as long as they expose the CIP-0103 facade contract. For the specific backend Ginkgo ships against, including endpoint addresses, exact allowlisted resources, Token Standard templates, and authentication mechanics, see [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md).
 

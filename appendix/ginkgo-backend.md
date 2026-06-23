@@ -22,17 +22,17 @@ Two HTTP endpoints on the backend, both speaking JSON-RPC 2.0. The wallet sends 
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
-| `POST {ledgerApi}/api/v0/dapp` | None (the dApp's call context) | dApp-initiated methods: `prepareExecute`, `ledgerApi` |
-| `POST {ledgerApi}/api/v0/user` | Wallet user's bearer token (`Authorization: Bearer <jwt>`) | User-authenticated follow-ups: `getTransaction`, `execute`, `deleteTransaction` |
+| `POST {ledgerApi}/api/v0/dapp` | Wallet user's bearer token (`Authorization: Bearer <token>`) | dApp-initiated methods: `prepareExecute`, `ledgerApi` |
+| `POST {ledgerApi}/api/v0/user` | Wallet user's bearer token (`Authorization: Bearer <token>`) | User-authenticated follow-ups: `getTransaction`, `execute`, `deleteTransaction` |
 
 `{ledgerApi}` is the base URL the wallet emits on `getActiveNetwork().ledgerApi`.
 
 ### Why two endpoints
 
-- `/api/v0/dapp` is the unauthenticated entry point. A dApp request that hits Ginkgo's `prepareExecute` triggers an HTTP call from the wallet's background to this endpoint, carrying just the dApp-supplied command(s). The backend prepares a Canton transaction and returns a `userUrl` whose query string carries two identifiers: `transactionId` (the gateway store's primary key, used as the lookup parameter for every user-API call) and `commandId` (the application-level id that surfaces back to the dApp as `TxChangedExecutedEvent.commandId`). The dApp never sees the URL — Ginkgo extracts both ids and uses them internally.
+- `/api/v0/dapp` is the prepare entry point. A dApp request that hits Ginkgo's `prepareExecute` triggers an HTTP call from the wallet's background to this endpoint, carrying the dApp-supplied command(s) (with the wallet user's bearer token attached, as on every facade call). The backend prepares a Canton transaction and returns a `userUrl` whose query string carries two identifiers: `transactionId` (the gateway store's primary key, used as the lookup parameter for every user-API call) and `commandId` (the application-level id that surfaces back to the dApp as `TxChangedExecutedEvent.commandId`). The dApp never sees the URL — Ginkgo extracts both ids and uses them internally.
 - `/api/v0/user` is the authenticated follow-up. After the user approves in Ginkgo's popup, the wallet's background calls this endpoint (with the user's session bearer token), keyed on `transactionId`, to fetch the prepared transaction (`getTransaction`), submit the signed transaction (`execute`), or clean up on rejection (`deleteTransaction`). This wire contract is pinned to `wallet-gateway-remote` v1.1.0+.
 
-The two endpoints are how Ginkgo enforces the user-approval gate: the prepare step is cheap and unauthenticated; the execute step requires a signed, user-approved transaction.
+The two endpoints are how Ginkgo enforces the user-approval gate: the prepare step only builds the transaction, while the execute step requires a signed, user-approved transaction.
 
 ## Allowlists
 
@@ -40,7 +40,7 @@ The backend enforces two allowlists. Requests outside them are rejected with `-3
 
 ### Token Standard command templates
 
-`prepareExecute` commands are matched against `(templateId, choiceName)`. Only the entries in this table are accepted:
+`prepareExecute` commands are matched against `(templateId, choice)`. Only the entries in this table are accepted:
 
 | Module:Template (interface) | Allowed choices |
 |---|---|
@@ -70,8 +70,8 @@ This allowlist is the source of the `ledgerApi`'s narrow surface — the Canton 
 ## Auth model
 
 - **dApp ↔ Ginkgo:** browser-extension postMessage. No HTTP, no credentials. See [concepts/auth-and-approval.md](../concepts/auth-and-approval.md).
-- **Ginkgo ↔ backend `/api/v0/dapp`:** unauthenticated HTTP. The backend treats every prepare request as untrusted; allowlists run on every call.
-- **Ginkgo ↔ backend `/api/v0/user`:** authenticated HTTP with the wallet user's `Authorization: Bearer <jwt>` header. The JWT is obtained via Google OAuth during onboarding and stored in the wallet's session storage.
+- **Ginkgo ↔ backend `/api/v0/dapp`:** HTTP with the wallet user's `Authorization: Bearer <token>` header attached (as on every facade call). The backend still treats every prepare request as untrusted — allowlists run on every call, and the user-approval gate, not the token, is what protects this step.
+- **Ginkgo ↔ backend `/api/v0/user`:** authenticated HTTP with the wallet user's `Authorization: Bearer <token>` header. The token is obtained via Google OAuth sign-in and stored in the wallet's session storage.
 - **Backend ↔ Wallet Gateway:** internal. Ginkgo doesn't see this path. The backend may use its own service-level credentials.
 - **Backend ↔ Canton Ledger API:** internal. Same as above.
 

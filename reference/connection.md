@@ -101,7 +101,7 @@ StatusEvent = {
 }
 
 Session = {
-  accessToken: string;  // JWT bearer token from the wallet's OAuth session
+  accessToken: string;  // bearer token from the wallet's OAuth session
   userId: string;       // Stable user identifier from the OAuth session
 }
 ```

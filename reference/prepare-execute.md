@@ -10,22 +10,26 @@ Full transaction lifecycle: dApp submits a command, backend prepares a Canton tr
 
 ```ts
 PrepareExecuteParams = {
-  commands: GatewayCommand[];           // Canton commands to execute
-  userId?: string;                      // optional — defaults to active wallet user
-  signingProviderId?: string;           // optional — defaults to 'ginkgo'
-  applicationId?: string;               // optional — Canton application identifier
-  meta?: Record<string, unknown>;       // optional — pass-through metadata
+  commands: JsCommands;                          // Canton JSON Ledger API commands (see below) — required
+  commandId?: string;                            // optional — client-supplied command id, echoed in events
+  actAs?: string[];                              // optional — extra parties to act as; defaults to the primary party
+  readAs?: string[];                             // optional — extra parties granted read access
+  disclosedContracts?: DisclosedContract[];      // optional — explicitly disclosed contracts (e.g. a Token Standard factory)
+  synchronizerId?: string;                       // optional — target synchronizer; auto-selected if omitted
+  packageIdSelectionPreference?: string[];       // optional — package-id preference for name/interface resolution
 }
 
-type GatewayCommand = {
-  templateId: string;                   // e.g. '#Splice.Api.Token.TransferInstructionV1:TransferFactory'
-  choiceName: string;                   // e.g. 'TransferFactory_Transfer'
-  contractId?: string;                  // for exercise commands
-  arguments: Record<string, unknown>;   // choice arguments
+type DisclosedContract = {
+  templateId?: string;
+  contractId?: string;
+  createdEventBlob: string;                      // required
+  synchronizerId?: string;
 };
 ```
 
-The exact `commands` shape depends on the Canton template package the backend is configured to allow. The backend enforces a strict `(templateId, choiceName)` allowlist — commands outside the allowlist return `-32003 TRANSACTION_REJECTED`. The default allowlist covers the Token Standard transfer + allocation flows; see [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md#token-standard-command-templates) for the full table. See the [send-tokens guide](../guides/send-tokens.md) for a concrete example.
+`commands` (`JsCommands`) is the **Canton JSON Ledger API command payload**: an array of command objects, each a tagged union — `{ CreateCommand: { templateId, createArguments } }` or `{ ExerciseCommand: { templateId, contractId, choice, choiceArgument } }` — exactly as accepted by the ledger's `/v2/interactive-submission/prepare`. The SDK types it loosely (`{ [key: string]: any }`) and the wallet forwards it to the backend verbatim.
+
+The backend enforces a strict `(templateId, choice)` allowlist — commands outside the allowlist return `-32003 TRANSACTION_REJECTED`. The default allowlist covers the Token Standard transfer + allocation flows; see [appendix/ginkgo-backend.md](../appendix/ginkgo-backend.md#token-standard-command-templates) for the full table. See the [send-tokens guide](../guides/send-tokens.md) for a concrete example.
 
 ### Returns
 
@@ -49,12 +53,22 @@ Per the canonical CIP-0103 OpenRPC schema, `prepareExecute`'s result is `Null`. 
 ```ts
 import { prepareExecute } from '@canton-network/dapp-sdk';
 
+// Each entry in `commands` is a Canton JSON Ledger API command — a tagged
+// union ({ CreateCommand } or { ExerciseCommand }). This creates a Ping contract.
 await prepareExecute({
-  commands: [{
-    templateId: '#Splice.Api.Token.TransferInstructionV1:TransferFactory',
-    choiceName: 'TransferFactory_Transfer',
-    arguments: { /* ... */ },
-  }],
+  actAs: ['alice::1220abc...def0'],
+  commands: [
+    {
+      CreateCommand: {
+        templateId: '#AdminWorkflows:Canton.Internal.Ping:Ping',
+        createArguments: {
+          id: 'ping-1',
+          initiator: 'alice::1220abc...def0',
+          responder: 'alice::1220abc...def0',
+        },
+      },
+    },
+  ],
 });
 console.log('Transaction submitted'); // we don't get back the result; call prepareExecuteAndWait for that
 ```
@@ -127,6 +141,8 @@ LedgerApiParams = {
 ```
 
 `requestMethod` is normalized to lowercase. `body` is normalized to an object (legacy callers passing stringified JSON are accepted).
+
+> **Ginkgo limitation.** The CIP-0103 contract defines `query` and `path` (and allows `patch` as a `requestMethod`), but Ginkgo's proxy currently forwards **only** `requestMethod`, `resource`, and `body` — `query`/`path` are ignored and `patch` is not accepted. Encode any query string or path parameters directly into `resource`, and put request data in `body`.
 
 ### Returns
 

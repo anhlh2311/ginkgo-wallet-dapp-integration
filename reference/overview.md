@@ -78,7 +78,7 @@ interface ConnectResult {
 
 ```ts
 interface Session {
-  accessToken: string;  // JWT bearer token from the wallet's auth session
+  accessToken: string;  // bearer token from the wallet's auth session
   userId: string;       // Stable user identifier from the OAuth session
 }
 ```
