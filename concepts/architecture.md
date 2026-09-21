@@ -20,7 +20,7 @@ sequenceDiagram
 
     opt connect / signMessage / signTransaction
         BG->>Popup: chrome.windows.create(?id=uuid)
-        Note right of Popup: signing methods show a password field;<br/>verify-on-approve before resolving
+        Note right of Popup: signing methods show a password field,<br/>verified on approve before resolving
         Popup-->>BG: DAPP_APPROVAL_RESULT(approved, password?)
         Note right of BG: chrome.windows.onRemoved → auto-reject
     end
