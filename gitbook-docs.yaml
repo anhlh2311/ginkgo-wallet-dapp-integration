@@ -1,0 +1,18 @@
+# GitBook Site Git Sync configuration.
+# The repository has a single root SUMMARY.md spanning the root pages
+# (README.md, quickstart.md) and all subdirectories (concepts, reference,
+# guides, extensions, appendix), so it maps to one GitBook space rooted at
+# the repository root. The Concepts/Reference/Guides/Extensions/Appendix
+# groupings live inside that space's SUMMARY.md as page groups.
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: Ginkgo Wallet — dApp Integration
+  structure:
+    - type: space
+      key: space-dapp-integration
+      title: Ginkgo Wallet — dApp Integration
+      path: dapp-integration
+      default: true
+      content:
+        directory: /
