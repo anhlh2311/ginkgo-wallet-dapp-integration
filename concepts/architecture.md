@@ -20,7 +20,8 @@ sequenceDiagram
 
     opt connect / signMessage / signTransaction
         BG->>Popup: chrome.windows.create(?id=uuid)
-        Popup-->>BG: DAPP_APPROVAL_RESULT(approved)
+        Note right of Popup: signing methods show a password field;<br/>verify-on-approve before resolving
+        Popup-->>BG: DAPP_APPROVAL_RESULT(approved, password?)
         Note right of BG: chrome.windows.onRemoved → auto-reject
     end
 
@@ -66,13 +67,13 @@ Lives at `entrypoints/content.ts` in the wallet's source. Runs in an *isolated* 
 
 ### 3. Background service worker
 
-MV3 service worker at `entrypoints/background.ts`. Holds the user's session state (`partyId`, `authToken`, cached unlocked private key), encrypted keystore, current network. Dispatches JSON-RPC methods to handlers in `entrypoints/background/handlers/`. Lifecycle: may sleep when idle, wakes on a `chrome.runtime` message.
+MV3 service worker at `entrypoints/background.ts`. Holds the user's session state (`partyId`, `authToken`, and an `unlocked` lock flag in `chrome.storage.session`), encrypted keystore, current network. It does **not** hold a decrypted private key between calls — signing is password-on-demand (see below). Dispatches JSON-RPC methods to handlers in `entrypoints/background/handlers/`. Lifecycle: may sleep when idle, wakes on a `chrome.runtime` message.
 
 This is where:
 
-- Approval popups are triggered (via `chrome.windows.create`) for `connect`, `signMessage`, and `signTransaction`. The background generates a `requestId`, the popup fetches the request details by that id, and the dApp call's Promise resolves on `DAPP_APPROVAL_RESULT`. Closing the popup without deciding auto-rejects via `chrome.windows.onRemoved`.
-- The private key is decrypted (only while the wallet is unlocked, held in a JS variable that dies when the service worker sleeps).
-- All `signMessage` / `signTransactionHash` calls happen.
+- Approval popups are triggered (via `chrome.windows.create`) for `connect`, `signMessage`, and `signTransaction` (and, after the prepare step, for `prepareExecute*`). The background generates a `requestId`, the popup fetches the request details by that id, and the dApp call's Promise resolves on `DAPP_APPROVAL_RESULT`. For signing methods the popup also carries the user's password, verified on approve. Closing the popup without deciding auto-rejects via `chrome.windows.onRemoved`.
+- The private key is decrypted **on demand for a single signing operation** using the password supplied in that approval popup (`entrypoints/background/signing/sign-with-password.ts`), then the key reference is dropped. It is never cached for reuse. The one exception is silent auto-register of transfer pre-approval — the only flow with no user present to prompt — which uses a narrowly-scoped in-memory key, cleared on lock/logout/network-switch.
+- All `signMessage` / `signTransactionHash` calls happen here (never in the popup — the popup only forwards the password).
 - HTTP calls to the wallet's connected backend are issued, for `prepareExecute*` and `ledgerApi`.
 - Push events (`statusChanged`, `accountsChanged`) are fanned out to dApps as `SPLICE_WALLET_EVENT`, independent of any request.
 
@@ -100,7 +101,7 @@ If a dApp needs read access to Canton ledger state beyond what `getPrimaryAccoun
 
 ## Lifecycle notes
 
-- **Service worker sleep:** the background may idle out between calls. The first call after a sleep cycle takes ~50-200ms longer than subsequent calls in the same wake window. This is normal MV3 behavior.
-- **Locked wallet:** if the user has locked Ginkgo (or the auto-lock timer has fired), the cached private key is gone. `connect` returns `isConnected: false` with `reason: 'Wallet is locked'`. dApps should treat this as a transient state and prompt the user to unlock.
+- **Service worker sleep:** the background may idle out between calls. The first call after a sleep cycle takes ~50-200ms longer than subsequent calls in the same wake window. This is normal MV3 behavior. A service-worker restart does **not** re-lock the wallet: the `unlocked` flag lives in `chrome.storage.session` and survives the restart, and because signing is password-on-demand there is no decrypted key to lose — a restarted worker can still sign (after the user re-enters their password at the next approval).
+- **Locked wallet:** the wallet re-locks on **inactivity only** — the `chrome.alarms` auto-lock timer (default 15 min), or an explicit lock/logout/network-switch. When locked, `connect` returns `isConnected: false` with `reason: 'Wallet is locked'`. dApps should treat this as a transient state and prompt the user to unlock.
 - **Popup approval blocking:** when the user has an approval popup open, the dApp call is suspended awaiting their decision. Calls can wait minutes. Plan for this — the SDK request returns a promise; don't expect <100ms latency on `signMessage` or `prepareExecute`.
 - **Network change:** the user can switch networks in the popup at any time. Ginkgo emits a `statusChanged` event via `SPLICE_WALLET_EVENT` (see [extensions](../extensions/ginkgo-vs-cip-0103.md)). dApps that hold state should re-fetch `getActiveNetwork` and `getPrimaryAccount` on resume.

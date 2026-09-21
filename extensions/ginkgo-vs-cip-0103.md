@@ -123,7 +123,7 @@ CIP-0103 defines an optional `target: string` on the SpliceMessage envelope so d
 | Method set | 11 methods | 12 methods (+`signTransaction`) |
 | `signMessage` returns | `{ signature }` | `{ signature }` (spec-compliant) |
 | `Network` shape | `{ networkId, ledgerApi?, accessToken? }` | `{ networkId, ledgerApi }` (spec-compliant; CAIP-2 form) |
-| `Wallet.networkId` | CAIP-2 chain ID | CAIP-2 chain ID (`canton:<network>`) — spec-compliant |
+| `Wallet.networkId` | CAIP-2 chain ID | CAIP-2 chain ID, DA-canonical `canton:da-<network>` (e.g. `canton:da-devnet`) — spec-compliant and the form PartyLayer recognizes |
 | `prepareExecute` returns | `Null` | `null` (spec-compliant) |
 | `prepareExecuteAndWait` returns | `{ tx: TxChangedExecutedEvent }` | `{ tx: TxChangedExecutedEvent }` (spec-compliant) |
 | `WalletEvent` envelope members | 7 (REQUEST, RESPONSE, EXT_*, IDP_AUTH_SUCCESS, LOGOUT) | 8 (+`SPLICE_WALLET_EVENT`) |

@@ -4,7 +4,7 @@ The transaction submission methods. These are the primary way dApps submit anyth
 
 ## `prepareExecute`
 
-Full transaction lifecycle: dApp submits a command, backend prepares a Canton transaction, user approves, wallet signs locally, backend executes on the ledger. Returns `null` per CIP-0103 — use [`prepareExecuteAndWait`](#prepareexecuteandwait) if you want the execute result.
+Full transaction lifecycle: dApp submits a command, backend prepares a Canton transaction, user approves and enters their password in the approval popup, wallet decrypts the key on demand and signs locally, backend executes on the ledger. Returns `null` per CIP-0103 — use [`prepareExecuteAndWait`](#prepareexecuteandwait) if you want the execute result.
 
 ### Params
 

@@ -95,11 +95,11 @@ console.log(`  completionOffset: ${result.tx.payload.completionOffset}`);
 
 1. **Prepare.** Ginkgo forwards the command(s) to the wallet's backend, which validates the (templateId, choice) against its Token Standard allowlist, builds a Canton transaction, computes the `preparedTransactionHash`, and returns a `commandId`.
 
-2. **Approve.** The wallet pops the approval window in the user's browser, showing the prepared command details. The user clicks Approve (or Reject — if rejected, the wallet cleans up the pending command server-side and your `prepareExecuteAndWait` call rejects with `4001 USER_REJECTED`).
+2. **Approve.** The wallet pops the approval window in the user's browser, showing the prepared command details and a password field. The user enters their password and clicks Approve (or Reject — if rejected, the wallet cleans up the pending command server-side and your `prepareExecuteAndWait` call rejects with `4001 USER_REJECTED`). The password is verified on approve; an incorrect one is reported inline in the popup, not returned to the dApp.
 
 3. **Get transaction.** Ginkgo retrieves the prepared transaction details from the backend (authenticated as the wallet user), receiving the `preparedTransactionHash` (base64-encoded 32-byte hash) the wallet needs to sign.
 
-4. **Sign locally.** The wallet decrypts the user's private key from the in-memory cache and computes `signTransactionHash(preparedTransactionHash, privateKey)`. The signature is base64-encoded. The private key never leaves the wallet.
+4. **Sign locally.** The wallet decrypts the user's private key on demand with the password from the approval popup, computes `signTransactionHash(preparedTransactionHash, privateKey)`, and drops the key reference. The signature is base64-encoded. The private key never leaves the wallet and is not cached for reuse.
 
 5. **Execute.** Ginkgo submits the signed transaction back to the backend (still authenticated as the wallet user). The backend orchestrates submission to the Canton ledger and returns the `updateId` + `completionOffset`.
 

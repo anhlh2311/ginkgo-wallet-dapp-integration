@@ -118,9 +118,9 @@ console.log(verified ? '✅' : '❌');
 
 2. The dApp called `connect`. Ginkgo's content script forwarded the JSON-RPC request to the background service worker, which checked unlock state and returned a `{ isConnected, reason, isNetworkConnected, networkReason }` object.
 
-3. The dApp called `listAccounts`. Ginkgo returned an array of `Wallet` objects — currently one — carrying the active party's `partyId`, `publicKey`, `networkId` (in CAIP-2 form, e.g. `canton:devnet`), `hint`, and other fields.
+3. The dApp called `listAccounts`. Ginkgo returned an array of `Wallet` objects — currently one — carrying the active party's `partyId`, `publicKey`, `networkId` (in CAIP-2 form, e.g. `canton:da-devnet`), `hint`, and other fields.
 
-4. The dApp called `signMessage`. Because `signMessage` is in the `APPROVAL_REQUIRED_METHODS` set, the user saw a popup with the message preview and approved. The wallet computed `nacl.sign.detached(utf8(message), privateKey)`, base64-encoded the 64-byte signature, and returned `{ signature }` — and only `{ signature }`, per CIP-0103.
+4. The dApp called `signMessage`. Because `signMessage` is in the `APPROVAL_REQUIRED_METHODS` set, the user saw a popup with the message preview and a password field, entered their password, and approved. The wallet verified the password, decrypted the key on demand, computed `nacl.sign.detached(utf8(message), privateKey)`, base64-encoded the 64-byte signature, dropped the key, and returned `{ signature }` — and only `{ signature }`, per CIP-0103.
 
 5. Locally, the dApp verified the signature against the publicKey cached from step 3.
 

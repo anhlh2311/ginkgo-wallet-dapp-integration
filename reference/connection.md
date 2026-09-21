@@ -141,7 +141,7 @@ None.
 
 ```ts
 Network = {
-  networkId: string;   // CAIP-2-compliant chain ID, e.g. 'canton:localnet', 'canton:devnet'
+  networkId: string;   // CAIP-2-compliant chain ID, e.g. 'canton:da-local', 'canton:da-devnet'
   ledgerApi?: string;  // Backend base URL
   accessToken?: string;// Optional bearer token; Ginkgo never emits this field
 }
@@ -166,7 +166,7 @@ console.log(`On ${networkId} via ${ledgerApi}`);
 
 ### Notes
 
-- `networkId` is in [CAIP-2](https://chainagnostic.org/CAIPs/caip-2) form (`canton:<network>`). Ginkgo emits values like `'canton:localnet'`, `'canton:devnet'`, `'canton:testnet'`, `'canton:mainnet'`.
+- `networkId` is in [CAIP-2](https://chainagnostic.org/CAIPs/caip-2) form. Ginkgo emits the DA-canonical `canton:da-*` values — `'canton:da-local'`, `'canton:da-devnet'`, `'canton:da-testnet'`, `'canton:da-mainnet'` — which are the forms SDKs such as PartyLayer recognize (the bare `canton:mainnet` form is discarded by the dApp Kit). Which of these a given build can emit depends on the brand's enabled-network allowlist: the default Ginkgo build exposes Devnet and Mainnet, and a Mainnet-only production build emits only `'canton:da-mainnet'`.
 - The user can change the active network via the Ginkgo popup at any time. dApps that hold per-network state should re-fetch this on focus, on `statusChanged` events (see [extensions](../extensions/ginkgo-vs-cip-0103.md)), or before each significant operation.
 - There is no `setNetwork` method. Network selection is wallet-driven only.
 - For an EVM-style chain ID analog, treat `networkId` as the equivalent of `eth_chainId`'s return — both serve to disambiguate which chain a wallet is signing against.

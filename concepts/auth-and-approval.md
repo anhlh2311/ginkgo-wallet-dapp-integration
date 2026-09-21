@@ -15,7 +15,7 @@ Ginkgo's trust model is straightforward but has a few subtleties worth understan
 This has two implications:
 
 - **Server-side dApps cannot impersonate users.** They have to drive an *actual* browser session with Ginkgo installed and a logged-in user.
-- **Phishing surface lives in the approval popup.** The user must look at the popup and decide whether to approve. The popup shows the dApp's origin, the method being called, and the request payload (for `signMessage`, the message text; for `prepareExecute`, the command list).
+- **Phishing surface lives in the approval popup.** The user must look at the popup and decide whether to approve. The popup shows the dApp's origin, the method being called, and the request payload (for `signMessage`, the message text; for `prepareExecute`, the command list). For signing methods it also requires the user to re-enter their wallet password before anything is signed.
 
 ## Which methods require user approval
 
@@ -28,12 +28,14 @@ Methods in the `APPROVAL_REQUIRED_METHODS` set show an approval popup before the
 | `isConnected` / `status` | No | — |
 | `getActiveNetwork` | No | — |
 | `listAccounts` / `getPrimaryAccount` | No | — |
-| `signMessage` | **Yes** | Message text + dApp origin + "Sign" button. |
-| `signTransaction` | **Yes** | Hash to be signed + dApp origin. |
-| `prepareExecute` / `prepareExecuteAndWait` | **Yes** | Prepared command details + dApp origin. |
+| `signMessage` | **Yes** | Message text + dApp origin + password field + "Sign" button. |
+| `signTransaction` | **Yes** | Hash to be signed + dApp origin + password field. |
+| `prepareExecute` / `prepareExecuteAndWait` | **Yes** | Prepared command details + dApp origin + password field (shown after the prepare step). |
 | `ledgerApi` | No | — (used for read-only ledger queries) |
 
 If the user clicks "Reject" (or closes the popup), Ginkgo returns a JSON-RPC error with code `4001 USER_REJECTED` and the dApp's request promise rejects.
+
+**Password-on-demand.** The signing methods (`signMessage`, `signTransaction`, `prepareExecute`, `prepareExecuteAndWait`) require the user to enter their wallet password in the approval popup. The password is verified on approve (`verify-on-approve`); the wallet then decrypts the signing key for that one operation and drops it — keys are never cached for reuse. `connect` needs no password. An incorrect password is reported inline in the popup ("Invalid password") and never reaches the dApp — the dApp only ever sees approval, `4001 USER_REJECTED`, or the eventual result.
 
 ```ts
 import { signMessage } from '@canton-network/dapp-sdk';
@@ -63,7 +65,7 @@ try {
 ```
 
 - `isConnected: true, isNetworkConnected: true` — green light, the user is signed in and the backend is reachable.
-- `isConnected: false, reason: 'Wallet is locked'` — user unlocked once but the auto-lock timer fired (or they manually locked). They need to enter their password again.
+- `isConnected: false, reason: 'Wallet is locked'` — user unlocked once but the inactivity auto-lock timer fired (or they manually locked/logged out/switched network). Re-lock is inactivity-only; a background service-worker restart does not lock the wallet. They need to unlock again.
 - `isConnected: false, reason: 'No party onboarded'` — user signed in but hasn't completed Canton party onboarding. (Rare in practice — happens during first-run.)
 - `isNetworkConnected: false` — backend HTTP errors. Ginkgo will surface the reason but the dApp can't fix it.
 

@@ -1,6 +1,8 @@
 # Signing
 
-Local Ed25519 signing methods. No network round-trip — the wallet decrypts the private key in memory and signs directly. Both methods trigger an approval popup.
+Local Ed25519 signing methods. No network round-trip — the wallet signs directly. Both methods trigger an approval popup.
+
+Signing is **password-on-demand**: the approval popup carries a password field, and the user's password is verified on approve (`verify-on-approve`). On approval the wallet decrypts the private key **for that single signing operation**, signs, and immediately drops the key reference — it is never cached for reuse and never leaves the background service worker. An incorrect password is reported inline in the popup ("Invalid password"); the user retries or rejects, so it does not surface as a JSON-RPC error to the dApp.
 
 ## `signMessage`
 

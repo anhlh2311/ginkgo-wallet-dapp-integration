@@ -33,7 +33,7 @@ type JsonRpcResponse =
 
 ```ts
 interface Network {
-  networkId: string;   // CAIP-2-compliant chain ID, e.g. 'canton:localnet', 'canton:devnet'
+  networkId: string;   // CAIP-2-compliant chain ID, e.g. 'canton:da-local', 'canton:da-devnet'
   ledgerApi?: string;  // Base URL of the wallet's connected backend (the CIP-0103 facade)
   accessToken?: string;// Optional bearer token; Ginkgo never emits this field
 }

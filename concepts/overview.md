@@ -56,7 +56,7 @@ If you've integrated MetaMask or another EIP-1193 wallet, the mental model carri
 - `personal_sign` → `signMessage`
 - `eth_signTypedData` → no direct analog; closest is `signTransaction` (which signs a raw 32-byte hash, not typed data)
 - `eth_sendTransaction` → `prepareExecute` (the wallet orchestrates prepare → sign → submit in one call)
-- `eth_chainId` → `getActiveNetwork().networkId` (CAIP-2 form: `canton:<network>`)
+- `eth_chainId` → `getActiveNetwork().networkId` (CAIP-2 form: `canton:da-<network>`, e.g. `canton:da-devnet`)
 - `wallet_switchEthereumChain` → no equivalent; users switch networks in the wallet UI
 - `accountsChanged` / `chainChanged` events → see [extensions](../extensions/ginkgo-vs-cip-0103.md)
 

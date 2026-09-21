@@ -52,7 +52,7 @@ Wallet = {
   hint: string;                                      // pre-'::' portion
   publicKey: string;                                 // base64-encoded Ed25519 public key
   namespace: string;                                 // post-'::' portion (the fingerprint)
-  networkId: string;                                 // CAIP-2 form, e.g. 'canton:devnet'
+  networkId: string;                                 // CAIP-2 form, e.g. 'canton:da-devnet'
   signingProviderId: string;                         // 'ginkgo'
   externalTxId?: string;
   topologyTransactions?: string;
@@ -96,4 +96,4 @@ const cachedPublicKey = accounts[0]?.publicKey;
 - `signingProviderId` is `'ginkgo'` — it identifies Ginkgo as the account's signing provider. For direct dApp usage you can ignore it.
 - `namespace === partyId.split('::')[1]` (always; pre-split for convenience).
 - `hint === partyId.split('::')[0]` (always).
-- `networkId` is in CAIP-2 form (`canton:<network>`), matching the value returned by `getActiveNetwork().networkId`.
+- `networkId` is in CAIP-2 form (`canton:da-<network>`, e.g. `canton:da-devnet`), matching the value returned by `getActiveNetwork().networkId`.
